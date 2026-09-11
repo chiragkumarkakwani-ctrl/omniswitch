@@ -81,6 +81,11 @@ resources:
     cpu: "1"
     memory: 512Mi
 
+# Grace period for in-flight requests (including SSE streams) to drain on
+# SIGTERM before Kubernetes force-kills the pod. Keep in sync with
+# OMNISWITCH_SHUTDOWN_TIMEOUT (default 30s) plus a safety margin.
+terminationGracePeriodSeconds: 45
+
 podAnnotations: {}
 podLabels: {}
 
