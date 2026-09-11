@@ -1,0 +1,70 @@
+name: CI extras (Docker, Helm, Kustomize)
+
+# Lightweight PR-time checks for the deployment artifacts that install-verify.yml
+# exercises against real tagged releases. This file intentionally does not
+# touch ci.yml so the existing test/lint/build matrix is untouched.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke:
+    name: Docker build + /healthz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t omniswitch:ci -f Dockerfile .
+
+      - name: Run and health-check
+        shell: bash
+        run: |
+          set -e
+          CID=$(docker run -d -p 18080:8080 \
+            -e OPENAI_API_KEY=dummy -e OMNISWITCH_AUTH=false -e OMNISWITCH_MCP_ENABLED=false \
+            omniswitch:ci)
+          trap 'docker logs "$CID" || true; docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+
+          up=0
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:18080/healthz; then up=1; break; fi
+            sleep 1
+          done
+          if [ "$up" -ne 1 ]; then
+            echo "::error::/healthz never returned 200 (expected once cmd/gateway ships liveness/readiness endpoints)"
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/healthz)
+          echo "GET /healthz -> ${code}"
+          if [ "$code" != "200" ]; then exit 1; fi
+
+  helm-lint:
+    name: helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint deploy/helm/omniswitch
+
+  kustomize-build:
+    name: kubectl kustomize deploy/kubernetes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: kubectl kustomize
+        run: kubectl kustomize deploy/kubernetes
