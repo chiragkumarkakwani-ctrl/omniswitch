@@ -1747,12 +1747,12 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 
 func banner() string {
 	return `
-  ____             _   _            _
- / ___|  ___ _ __ | |_(_)_ __   ___| |
- \___ \ / _ \ '_ \| __| | '_ \ / _ \ |
-  ___) |  __/ | | | |_| | | | |  __/ |
- |____/ \___|_| |_|\__|_|_| |_|\___|_|
+   ___                  _ ____            _ _       _
+  / _ \ _ __ ___  _ __ (_) ___|_      _(_) |_ ___| |__
+ | | | | '_ ` + "`" + ` _ \| '_ \| \___ \ \ /\ / / | __/ __| '_ \
+ | |_| | | | | | | | | | |___) \ V  V /| | || (__| | | |
+  \___/|_| |_| |_|_| |_|_|____/ \_/\_/ |_|\__\___|_| |_|
 
-  AI Gateway - Policy | Guardrails | Observability
+  OmniSwitch AI Gateway - Routing | Guardrails | MCP | Observability
 `
 }
