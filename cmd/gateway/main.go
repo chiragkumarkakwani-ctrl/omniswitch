@@ -9,9 +9,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/admin"
@@ -41,6 +43,17 @@ var (
 )
 
 func main() {
+	action, code := dispatch(os.Args[1:], os.Stdout, os.Stderr, os.Getenv)
+	if action == actionExit {
+		os.Exit(code)
+	}
+	runServe()
+}
+
+// runServe builds every gateway component and blocks serving HTTP until it
+// receives SIGINT/SIGTERM, then drains in-flight requests (including SSE
+// streams) before exiting.
+func runServe() {
 	log.Printf("OmniSwitch %s (commit %s, built %s)", version, commit, date)
 	settings, err := loadRuntimeSettings()
 	if err != nil {
@@ -68,9 +81,15 @@ func main() {
 		}
 	}()
 
-	// Initialize store.
+	// Initialize store. OMNISWITCH_DATABASE_URL takes precedence over
+	// gateway.storage_url from the config file so an operator can always
+	// override storage without editing config-as-code.
 	var st *store.Store
-	if dsn := strings.TrimSpace(os.Getenv("OMNISWITCH_DATABASE_URL")); strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+	dsn := strings.TrimSpace(os.Getenv("OMNISWITCH_DATABASE_URL"))
+	if dsn == "" {
+		dsn = strings.TrimSpace(settings.storageURL)
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		st, err = store.OpenPostgres(dsn)
 		if err != nil {
 			log.Fatalf("failed to connect to postgres: %v", err)
@@ -132,6 +151,7 @@ func main() {
 	gw.SetStreamGuardrailBuffer(settings.guardrailStreamBuffer)
 	gw.SetMaxRequestBytes(settings.maxRequestBytes)
 	gw.SetShadowProvider(settings.shadowProvider)
+	gw.SetAlerts(settings.alerts)
 	if settings.configPath != "" {
 		startConfigReloader(settings.configPath, rtr, gw, settings)
 		log.Printf("config hot-reload enabled for %s", settings.configPath)
@@ -180,7 +200,12 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"version": version, "commit": commit, "built": date})
 	})
 	if settings.mcpEnabled {
-		mcpEngine, err := policy.NewEngineFromFiles(settings.mcpPolicyPath)
+		resolvedPolicyPath, policySource, err := resolveMCPPolicyPath(settings)
+		if err != nil {
+			log.Fatalf("failed to load MCP policy: %v", err)
+		}
+		log.Printf("MCP policy: using %s (%s)", resolvedPolicyPath, policySource)
+		mcpEngine, err := policy.NewEngineFromFiles(resolvedPolicyPath)
 		if err != nil {
 			log.Fatalf("failed to load MCP policy: %v", err)
 		}
@@ -348,6 +373,14 @@ func main() {
 	defer closeRateLimiter()
 	handler := gateway.CORSMiddlewareWithOrigins(settings.corsOrigins, gateway.LoggingMiddleware(auth.Wrap(authorize.Wrap(rateLimiter.Wrap(mux)))))
 
+	// /healthz and /readyz are registered on a top-level mux ahead of the
+	// auth/authorization/rate-limit chain so liveness/readiness probes never
+	// need credentials and are never rate limited.
+	health := newHealthState(st, registry, settings.allowNoProviders)
+	topMux := http.NewServeMux()
+	health.registerHealthRoutes(topMux)
+	topMux.Handle("/", handler)
+
 	// Print startup banner.
 	fmt.Println(banner())
 	log.Printf("OmniSwitch AI Gateway listening on %s", settings.listenAddr)
@@ -360,14 +393,47 @@ func main() {
 
 	server := &http.Server{
 		Addr:              settings.listenAddr,
-		Handler:           handler,
+		Handler:           topMux,
 		ReadHeaderTimeout: settings.readHeaderTimeout,
 		ReadTimeout:       settings.readTimeout,
 		WriteTimeout:      settings.writeTimeout,
 		IdleTimeout:       settings.idleTimeout,
 	}
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("server failed: %v", err)
+
+	runWithGracefulShutdown(server, settings.shutdownTimeout)
+}
+
+// runWithGracefulShutdown starts server and blocks until it stops. On
+// SIGINT/SIGTERM it calls server.Shutdown with the given drain timeout so
+// in-flight requests, including long-lived SSE streams, get a chance to
+// finish instead of being cut off. It only calls log.Fatalf for a genuine
+// startup/listen failure; a clean shutdown returns normally so the process
+// exits 0.
+func runWithGracefulShutdown(server *http.Server, shutdownTimeout time.Duration) {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server failed: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("shutdown signal received, draining for up to %s", shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown did not complete cleanly: %v", err)
+		}
+		if err := <-serveErr; err != nil && err != http.ErrServerClosed {
+			log.Printf("server reported an error while shutting down: %v", err)
+		}
+		log.Printf("shutdown complete")
 	}
 }
 
@@ -396,8 +462,11 @@ type runtimeSettings struct {
 	writeTimeout           time.Duration
 	idleTimeout            time.Duration
 	shadowProvider         string
+	storageURL             string
+	alerts                 gateway.AlertConfig
 	mcpEnabled             bool
 	mcpPolicyPath          string
+	mcpPolicyExplicit      bool
 	mcpUpstreamURL         string
 	mcpTargets             []gatewayconfig.MCPTarget
 	routes                 map[string]router.Route
@@ -421,6 +490,8 @@ type runtimeSettings struct {
 	bootstrapAPIKey        string
 	bootstrapWorkspaceID   string
 	bootstrapRole          string
+	shutdownTimeout        time.Duration
+	allowNoProviders       bool
 }
 
 func loadRuntimeSettings() (runtimeSettings, error) {
@@ -443,7 +514,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 		// configurable zero default rather than truncating them unexpectedly.
 		writeTimeout:      0,
 		idleTimeout:       60 * time.Second,
-		mcpEnabled:        true,
+		mcpEnabled:        false,
 		mcpPolicyPath:     "policies/production-delete.yaml",
 		mcpUpstreamURL:    "http://127.0.0.1:8090/mcp",
 		routes:            map[string]router.Route{},
@@ -451,6 +522,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 		otelServiceName:   "omniswitch-gateway",
 		otelTimeout:       10 * time.Second,
 		prometheusEnabled: true,
+		shutdownTimeout:   30 * time.Second,
 	}
 
 	if configPath := strings.TrimSpace(os.Getenv("OMNISWITCH_CONFIG")); configPath != "" {
@@ -487,7 +559,10 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	}
 	settings.shadowProvider = env("OMNISWITCH_SHADOW_PROVIDER", settings.shadowProvider)
 	settings.mcpEnabled = envBool("OMNISWITCH_MCP_ENABLED", settings.mcpEnabled)
-	settings.mcpPolicyPath = env("OMNISWITCH_MCP_POLICY", settings.mcpPolicyPath)
+	if value := strings.TrimSpace(os.Getenv("OMNISWITCH_MCP_POLICY")); value != "" {
+		settings.mcpPolicyPath = value
+		settings.mcpPolicyExplicit = true
+	}
 	settings.mcpUpstreamURL = env("OMNISWITCH_MCP_UPSTREAM", settings.mcpUpstreamURL)
 	settings.oidcJWKSURL = env("OMNISWITCH_OIDC_JWKS_URL", settings.oidcJWKSURL)
 	settings.oidcIssuer = env("OMNISWITCH_OIDC_ISSUER", settings.oidcIssuer)
@@ -503,6 +578,8 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings.otelInsecure = envBool("OMNISWITCH_OTEL_INSECURE", settings.otelInsecure)
 	settings.otelTimeout = envDuration("OMNISWITCH_OTEL_TIMEOUT", settings.otelTimeout)
 	settings.prometheusEnabled = envBool("OMNISWITCH_PROMETHEUS_ENABLED", settings.prometheusEnabled)
+	settings.shutdownTimeout = envDuration("OMNISWITCH_SHUTDOWN_TIMEOUT", settings.shutdownTimeout)
+	settings.allowNoProviders = envBool("OMNISWITCH_ALLOW_NO_PROVIDERS", settings.allowNoProviders)
 	settings.vaultKey = env("OMNISWITCH_VAULT_KEY", settings.vaultKey)
 	// Bootstrap credentials must not live in config-as-code, so they are only
 	// accepted through the process environment or a secret manager injection.
@@ -666,6 +743,16 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	if cfg.Gateway.ShadowProvider != "" {
 		settings.shadowProvider = cfg.Gateway.ShadowProvider
 	}
+	if cfg.Gateway.StorageURL != "" {
+		settings.storageURL = cfg.Gateway.StorageURL
+	}
+	if cfg.Gateway.Alerts != nil {
+		settings.alerts = gateway.AlertConfig{
+			WebhookURL: cfg.Gateway.Alerts.WebhookURL,
+			SlackURL:   cfg.Gateway.Alerts.SlackURL,
+			Thresholds: append([]float64(nil), cfg.Gateway.Alerts.Thresholds...),
+		}
+	}
 	if cfg.Observability.OTelEnabled != nil {
 		settings.otelEnabled = *cfg.Observability.OTelEnabled
 	}
@@ -693,6 +780,7 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	}
 	if cfg.MCP.Policy != "" {
 		settings.mcpPolicyPath = cfg.MCP.Policy
+		settings.mcpPolicyExplicit = true
 	}
 	if cfg.MCP.Upstream != "" {
 		settings.mcpUpstreamURL = cfg.MCP.Upstream
@@ -1183,6 +1271,15 @@ func applyHotConfig(cfg gatewayconfig.Config, rtr *router.Router, gw *gateway.Ha
 		gw.SetShadowProvider(cfg.Gateway.ShadowProvider)
 	} else {
 		gw.SetShadowProvider(base.shadowProvider)
+	}
+	if cfg.Gateway.Alerts != nil {
+		gw.SetAlerts(gateway.AlertConfig{
+			WebhookURL: cfg.Gateway.Alerts.WebhookURL,
+			SlackURL:   cfg.Gateway.Alerts.SlackURL,
+			Thresholds: append([]float64(nil), cfg.Gateway.Alerts.Thresholds...),
+		})
+	} else {
+		gw.SetAlerts(base.alerts)
 	}
 	failures, cooldown := base.circuitBreakerFailures, base.circuitBreakerCooldown
 	if cfg.Gateway.CircuitBreakerFailures != nil {

@@ -68,6 +68,6 @@ else
 fi
 
 echo "Installed $(command -v omniswitch)"
-omniswitch --help 2>/dev/null | head -n 3 || true
+omniswitch --version 2>/dev/null || true
 echo
 echo "Quickstart: OPENAI_API_KEY=sk-... omniswitch serve"

@@ -27,6 +27,26 @@ builds:
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
+  - id: policy
+    main: ./cmd/omniswitch
+    binary: omniswitch-policy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
 
 archives:
   - formats: [tar.gz]
@@ -35,6 +55,9 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    ids:
+      - gateway
+      - policy
 
 checksum:
   name_template: "checksums.txt"
@@ -62,8 +85,12 @@ brews:
     homepage: https://omniswitch.dev
     description: Open-source AI gateway, guardrail, and agent-protocol layer
     license: Apache-2.0
+    skip_upload: "{{ .Prerelease }}"
     install: |
       bin.install("omniswitch")
+      bin.install("omniswitch-policy")
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/omniswitch version")
 
 dockers:
   - image_templates:
@@ -112,6 +139,7 @@ release:
   mode: replace
   header: |
     ## OmniSwitch {{ .Tag }}
-    Download the archive for your platform, extract, and run `./omniswitch`.
-    Docker: `docker run -p 8080:8080 ghcr.io/omniswitch-dev/omniswitch:{{ .Version }}`
+    Download the archive for your platform, extract, and run:
+    `OPENAI_API_KEY=sk-... ./omniswitch serve`
+    Docker: `docker run -p 8080:8080 -e OPENAI_API_KEY=sk-... ghcr.io/omniswitch-dev/omniswitch:{{ .Version }}`
 
