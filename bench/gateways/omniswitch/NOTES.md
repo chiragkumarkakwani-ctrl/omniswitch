@@ -1,5 +1,20 @@
 # OmniSwitch -- feature-parity decisions for the harness
 
+- **Provider/model reference syntax (execution-validated, 2026-09-11).**
+  Route variants must reference `type: custom` providers by their plain
+  name (`provider: bench-mock`, `model: bench-model`), not the
+  `"@provider"` / `"@provider/model"` alias syntax used in
+  `examples/gateway-config.yaml` for built-in provider types
+  (openai/anthropic/...). Reading `cmd/gateway/main.go`'s
+  `registerProviderAccount`: standard provider accounts get wrapped in a
+  `provider.NewAlias` (registered under `"@name"`), but the `type: custom`
+  branch registers the raw `provider.NewCustom` under its plain name only
+  and returns early -- no alias is created. Using the `@`-prefixed syntax
+  for a custom provider produces `no provider found for model
+  "@bench-mock/bench-model"` even though the provider registered
+  successfully at startup. Confirmed by running the mock upstream +
+  a binary built from this worktree locally and fixing forward until a
+  request round-tripped; see bench/README.md "Harness self-test".
 - **Auth key check.** `production-default.yaml` sets `gateway.auth: true`,
   which requires `OMNISWITCH_BOOTSTRAP_API_KEY` at startup and a `Bearer`
   key on every request. `forwarding.yaml` disables auth entirely, matching

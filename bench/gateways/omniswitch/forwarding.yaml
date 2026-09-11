@@ -38,6 +38,6 @@ routes:
   bench-model:
     variants:
       - name: bench-mock
-        provider: "@bench-mock"
-        model: "@bench-mock/bench-model"
+        provider: bench-mock
+        model: bench-model
         weight: 100

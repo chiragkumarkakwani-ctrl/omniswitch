@@ -50,6 +50,6 @@ routes:
     retry_codes: [429, 500, 502, 503, 504]
     variants:
       - name: bench-mock
-        provider: "@bench-mock"
-        model: "@bench-mock/bench-model"
+        provider: bench-mock
+        model: bench-model
         weight: 100
