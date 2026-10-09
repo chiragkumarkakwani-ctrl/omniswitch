@@ -372,13 +372,14 @@ request-shaping fields are `model`, `temperature`, `max_tokens`, `top_p`,
 
 Built-in input/output checks cover PII, prompt injection, SQL patterns, toxic
 content, and code leakage. `guardrails.actions` can set their action; regex
-rules can run at `input`, `output`, or `both` stages. File-configurable actions
-are `deny`, `redact`, `warn`, and `log`. Every trigger produces a structured
+rules can run at `input`, `output`, or `both` stages. All file-configurable
+checks accept `deny`, `redact`, `warn`, and `log`. Regex rules also accept
+`action: fallback` with a required `fallback: provider` or
+`fallback: provider/model` target; the gateway reroutes instead of rejecting. A target with another action is
+rejected rather than silently ignored. Every trigger produces a structured
 guardrail audit event; `deny` and `redact` are enforced in the local request
-path. The runtime engine has retry/reroute/fallback actions, but the file
-validator does not accept those actions and does not expose all their fields.
-In particular, a regex rule's `fallback` value is parsed but inactive with the
-accepted file-configured actions; do not rely on it for routing.
+path. The runtime engine also has retry/reroute actions, but the file
+validator does not accept those actions or expose all their fields.
 `stream_buffer: true` (default) buffers an SSE response before emitting it,
 allowing output enforcement. Turning it off makes streamed output enforcement
 a trusted-provider trade-off.
@@ -495,7 +496,7 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 
 - `OMNISWITCH_LISTEN`
 - `OMNISWITCH_DATA`
-- `OMNISWITCH_DATABASE_URL` - a `postgres://` DSN enables PostgreSQL storage so multiple gateway replicas share keys, logs, budgets, and configuration. When unset (or not a postgres URL), SQLite in the data directory is used.
+- `OMNISWITCH_DATABASE_URL` - a `postgres://` or `postgresql://` DSN enables PostgreSQL for the persistent store: keys, logs, budgets, saved configuration, and response cache. The driver remains experimental; shared persistence does not make A2A tasks or runtime health shared or establish production active-active readiness. When unset (or not a postgres URL), SQLite in the data directory is used.
 - `OMNISWITCH_AUTH`
 - `OMNISWITCH_BOOTSTRAP_API_KEY`
 - `OMNISWITCH_BOOTSTRAP_WORKSPACE`
@@ -571,7 +572,7 @@ map values/keys, not additional schema fields. Durations use strings such as
 | `gateway.data_dir` | SQLite data directory; default current directory. |
 | `gateway.policy_dir` | Dedicated named-policy replay directory; default `policies`. |
 | `gateway.storage` | Validation hint: `sqlite` or `postgres`; `postgres` requires `storage_url`. Driver selection follows `storage_url`. |
-| `gateway.storage_url` | PostgreSQL DSN; empty uses SQLite. Currently request logs and cache move to PostgreSQL; other state stays local. |
+| `gateway.storage_url` | PostgreSQL DSN for the persistent store, including keys, logs, budgets, saved config, and response cache; empty uses SQLite. PostgreSQL is experimental; A2A tasks and runtime health remain process-local. |
 | `gateway.auth` | Require API-key/OIDC authentication; OIDC configuration enables auth. |
 | `gateway.cache_threshold` | Lexical similarity cache cosine threshold; default `0.95`. |
 | `gateway.cache_ttl` | Exact/lexical response cache lifetime; default `24h`. |
@@ -646,9 +647,9 @@ map values/keys, not additional schema fields. Durations use strings such as
 | `guardrails.rules[].name` | Rule/audit label. |
 | `guardrails.rules[].stage` | `input`, `output`, or `both`; default `both`. |
 | `guardrails.rules[].pattern` | Go-compatible regular expression. |
-| `guardrails.rules[].action` | `deny`, `redact`, `warn`, or `log`; default `deny`. |
+| `guardrails.rules[].action` | `deny`, `redact`, `warn`, `log`, or `fallback`; default `deny`. |
 | `guardrails.rules[].message` | Explanation when the pattern matches. |
-| `guardrails.rules[].fallback` | Parsed reroute target, inactive under currently accepted file actions (see Guardrails boundary above). |
+| `guardrails.rules[].fallback` | Reroute target: `provider` or `provider/model`, with a nonempty provider name; required with `action: fallback` and rejected with other actions. |
 | `guardrails.tool_rules` | Tool-name/argument regex checks. |
 | `guardrails.tool_rules[].name` | Tool rule/audit label. |
 | `guardrails.tool_rules[].stage` | `input`, `output`, or `both`; default `output`. |
@@ -706,7 +707,7 @@ map values/keys, not additional schema fields. Durations use strings such as
 | `routes.*.override_params` | Request parameters forced by the route. |
 | `routes.*.drop_params` | Request fields removed before upstream forwarding. |
 | `routes.*.variants` | Weighted, optionally conditional provider/model alternatives. |
-| `routes.*.variants[].name` | Optional label; currently parsed but not used in routing metadata. |
+| `routes.*.variants[].name` | Optional label shown in configuration summaries; not used to choose a variant or in request-routing metadata. |
 | `routes.*.variants[].provider` | Registry provider/account for the variant. |
 | `routes.*.variants[].model` | Upstream model override. |
 | `routes.*.variants[].weight` | Positive integer selection weight. |

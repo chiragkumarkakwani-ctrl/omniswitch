@@ -429,8 +429,21 @@ func Validate(cfg Config) error {
 		if _, err := regexp.Compile(rule.Pattern); err != nil {
 			return fmt.Errorf("guardrails.rules[%d].pattern: %w", i, err)
 		}
-		if rule.Action != "" && !validGuardrailAction(rule.Action) {
-			return fmt.Errorf("guardrails.rules[%d].action must be deny, redact, warn, or log", i)
+		if rule.Action == "fallback" {
+			if strings.TrimSpace(rule.Fallback) == "" {
+				return fmt.Errorf("guardrails.rules[%d].fallback is required for the fallback action", i)
+			}
+			providerName, _, _ := strings.Cut(rule.Fallback, "/")
+			if strings.TrimSpace(strings.TrimPrefix(providerName, "@")) == "" {
+				return fmt.Errorf("guardrails.rules[%d].fallback must name a provider", i)
+			}
+		} else {
+			if rule.Action != "" && !validGuardrailAction(rule.Action) {
+				return fmt.Errorf("guardrails.rules[%d].action must be deny, redact, warn, log, or fallback", i)
+			}
+			if rule.Fallback != "" {
+				return fmt.Errorf("guardrails.rules[%d].fallback requires action: fallback", i)
+			}
 		}
 	}
 	for i, rule := range cfg.Guardrails.ToolRules {
