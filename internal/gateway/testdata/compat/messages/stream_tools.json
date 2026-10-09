@@ -1,0 +1,250 @@
+{
+  "description": "stream tools",
+  "source": "https://platform.claude.com/docs/en/api/messages",
+  "verified_on": "2026-10-09",
+  "kind": "stream",
+  "request": {
+    "model": "test-model",
+    "max_tokens": 64,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Weather?"
+      }
+    ]
+  },
+  "chunks": [
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_a",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":"
+                }
+              },
+              {
+                "index": 1,
+                "id": "call_b",
+                "type": "function",
+                "function": {
+                  "name": "get_time",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "Checking.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "function": {
+                  "arguments": "\"Boston\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "tool_calls"
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      }
+    },
+    "[DONE]"
+  ],
+  "expected_events": [
+    {
+      "event": "message_start",
+      "data": {
+        "type": "message_start",
+        "message": {
+          "id": "msg_demo",
+          "type": "message",
+          "role": "assistant",
+          "model": "test-model",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "event": "content_block_start",
+      "data": {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "tool_use",
+          "id": "call_a",
+          "name": "get_weather",
+          "input": {}
+        }
+      }
+    },
+    {
+      "event": "content_block_delta",
+      "data": {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "{\"city\":"
+        }
+      }
+    },
+    {
+      "event": "content_block_start",
+      "data": {
+        "type": "content_block_start",
+        "index": 1,
+        "content_block": {
+          "type": "tool_use",
+          "id": "call_b",
+          "name": "get_time",
+          "input": {}
+        }
+      }
+    },
+    {
+      "event": "content_block_delta",
+      "data": {
+        "type": "content_block_delta",
+        "index": 1,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "{}"
+        }
+      }
+    },
+    {
+      "event": "content_block_start",
+      "data": {
+        "type": "content_block_start",
+        "index": 2,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      }
+    },
+    {
+      "event": "content_block_delta",
+      "data": {
+        "type": "content_block_delta",
+        "index": 2,
+        "delta": {
+          "type": "text_delta",
+          "text": "Checking."
+        }
+      }
+    },
+    {
+      "event": "content_block_delta",
+      "data": {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "\"Boston\"}"
+        }
+      }
+    },
+    {
+      "event": "content_block_stop",
+      "data": {
+        "type": "content_block_stop",
+        "index": 0
+      }
+    },
+    {
+      "event": "content_block_stop",
+      "data": {
+        "type": "content_block_stop",
+        "index": 1
+      }
+    },
+    {
+      "event": "content_block_stop",
+      "data": {
+        "type": "content_block_stop",
+        "index": 2
+      }
+    },
+    {
+      "event": "message_delta",
+      "data": {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "tool_use",
+          "stop_sequence": null
+        },
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 5,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        }
+      }
+    },
+    {
+      "event": "message_stop",
+      "data": {
+        "type": "message_stop"
+      }
+    }
+  ],
+  "source_streaming": "https://platform.claude.com/docs/en/build-with-claude/streaming"
+}

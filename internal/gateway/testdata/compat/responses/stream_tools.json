@@ -1,0 +1,453 @@
+{
+  "description": "stream tools",
+  "source": "https://platform.openai.com/docs/api-reference/responses/create",
+  "verified_on": "2026-10-09",
+  "kind": "stream",
+  "request": {
+    "model": "test-model",
+    "input": "Weather?"
+  },
+  "chunks": [
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_a",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":"
+                }
+              },
+              {
+                "index": 1,
+                "id": "call_b",
+                "type": "function",
+                "function": {
+                  "name": "get_time",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "Checking.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "function": {
+                  "arguments": "\"Boston\"}"
+                }
+              }
+            ]
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "tool_calls"
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      }
+    },
+    "[DONE]"
+  ],
+  "expected_events": [
+    {
+      "event": "response.created",
+      "data": {
+        "type": "response.created",
+        "sequence_number": 0,
+        "response": {
+          "id": "resp_demo",
+          "object": "response",
+          "created_at": 1,
+          "status": "in_progress",
+          "error": null,
+          "incomplete_details": null,
+          "instructions": null,
+          "model": "test-model",
+          "output": [],
+          "usage": null,
+          "tools": [],
+          "tool_choice": "auto",
+          "parallel_tool_calls": true,
+          "store": false,
+          "metadata": {},
+          "max_output_tokens": null,
+          "temperature": null,
+          "top_p": null,
+          "text": {
+            "format": {
+              "type": "text"
+            }
+          },
+          "reasoning": {},
+          "previous_response_id": null,
+          "truncation": "disabled",
+          "user": ""
+        }
+      }
+    },
+    {
+      "event": "response.in_progress",
+      "data": {
+        "type": "response.in_progress",
+        "sequence_number": 1,
+        "response": {
+          "id": "resp_demo",
+          "object": "response",
+          "created_at": 1,
+          "status": "in_progress",
+          "error": null,
+          "incomplete_details": null,
+          "instructions": null,
+          "model": "test-model",
+          "output": [],
+          "usage": null,
+          "tools": [],
+          "tool_choice": "auto",
+          "parallel_tool_calls": true,
+          "store": false,
+          "metadata": {},
+          "max_output_tokens": null,
+          "temperature": null,
+          "top_p": null,
+          "text": {
+            "format": {
+              "type": "text"
+            }
+          },
+          "reasoning": {},
+          "previous_response_id": null,
+          "truncation": "disabled",
+          "user": ""
+        }
+      }
+    },
+    {
+      "event": "response.output_item.added",
+      "data": {
+        "type": "response.output_item.added",
+        "sequence_number": 2,
+        "output_index": 0,
+        "item": {
+          "type": "function_call",
+          "id": "fc_demo_0",
+          "status": "in_progress",
+          "call_id": "call_a",
+          "name": "get_weather",
+          "arguments": ""
+        }
+      }
+    },
+    {
+      "event": "response.function_call_arguments.delta",
+      "data": {
+        "type": "response.function_call_arguments.delta",
+        "sequence_number": 3,
+        "item_id": "fc_demo_0",
+        "output_index": 0,
+        "delta": "{\"city\":"
+      }
+    },
+    {
+      "event": "response.output_item.added",
+      "data": {
+        "type": "response.output_item.added",
+        "sequence_number": 4,
+        "output_index": 1,
+        "item": {
+          "type": "function_call",
+          "id": "fc_demo_1",
+          "status": "in_progress",
+          "call_id": "call_b",
+          "name": "get_time",
+          "arguments": ""
+        }
+      }
+    },
+    {
+      "event": "response.function_call_arguments.delta",
+      "data": {
+        "type": "response.function_call_arguments.delta",
+        "sequence_number": 5,
+        "item_id": "fc_demo_1",
+        "output_index": 1,
+        "delta": "{}"
+      }
+    },
+    {
+      "event": "response.output_item.added",
+      "data": {
+        "type": "response.output_item.added",
+        "sequence_number": 6,
+        "output_index": 2,
+        "item": {
+          "type": "message",
+          "id": "msg_demo",
+          "status": "in_progress",
+          "role": "assistant",
+          "content": []
+        }
+      }
+    },
+    {
+      "event": "response.content_part.added",
+      "data": {
+        "type": "response.content_part.added",
+        "sequence_number": 7,
+        "item_id": "msg_demo",
+        "output_index": 2,
+        "content_index": 0,
+        "part": {
+          "type": "output_text",
+          "text": "",
+          "annotations": []
+        }
+      }
+    },
+    {
+      "event": "response.output_text.delta",
+      "data": {
+        "type": "response.output_text.delta",
+        "sequence_number": 8,
+        "item_id": "msg_demo",
+        "output_index": 2,
+        "content_index": 0,
+        "delta": "Checking.",
+        "logprobs": []
+      }
+    },
+    {
+      "event": "response.function_call_arguments.delta",
+      "data": {
+        "type": "response.function_call_arguments.delta",
+        "sequence_number": 9,
+        "item_id": "fc_demo_0",
+        "output_index": 0,
+        "delta": "\"Boston\"}"
+      }
+    },
+    {
+      "event": "response.function_call_arguments.done",
+      "data": {
+        "type": "response.function_call_arguments.done",
+        "sequence_number": 10,
+        "item_id": "fc_demo_0",
+        "output_index": 0,
+        "name": "get_weather",
+        "arguments": "{\"city\":\"Boston\"}"
+      }
+    },
+    {
+      "event": "response.output_item.done",
+      "data": {
+        "type": "response.output_item.done",
+        "sequence_number": 11,
+        "output_index": 0,
+        "item": {
+          "type": "function_call",
+          "id": "fc_demo_0",
+          "status": "completed",
+          "call_id": "call_a",
+          "name": "get_weather",
+          "arguments": "{\"city\":\"Boston\"}"
+        }
+      }
+    },
+    {
+      "event": "response.function_call_arguments.done",
+      "data": {
+        "type": "response.function_call_arguments.done",
+        "sequence_number": 12,
+        "item_id": "fc_demo_1",
+        "output_index": 1,
+        "name": "get_time",
+        "arguments": "{}"
+      }
+    },
+    {
+      "event": "response.output_item.done",
+      "data": {
+        "type": "response.output_item.done",
+        "sequence_number": 13,
+        "output_index": 1,
+        "item": {
+          "type": "function_call",
+          "id": "fc_demo_1",
+          "status": "completed",
+          "call_id": "call_b",
+          "name": "get_time",
+          "arguments": "{}"
+        }
+      }
+    },
+    {
+      "event": "response.output_text.done",
+      "data": {
+        "type": "response.output_text.done",
+        "sequence_number": 14,
+        "item_id": "msg_demo",
+        "output_index": 2,
+        "content_index": 0,
+        "text": "Checking.",
+        "logprobs": []
+      }
+    },
+    {
+      "event": "response.content_part.done",
+      "data": {
+        "type": "response.content_part.done",
+        "sequence_number": 15,
+        "item_id": "msg_demo",
+        "output_index": 2,
+        "content_index": 0,
+        "part": {
+          "type": "output_text",
+          "text": "Checking.",
+          "annotations": []
+        }
+      }
+    },
+    {
+      "event": "response.output_item.done",
+      "data": {
+        "type": "response.output_item.done",
+        "sequence_number": 16,
+        "output_index": 2,
+        "item": {
+          "type": "message",
+          "id": "msg_demo",
+          "status": "completed",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Checking.",
+              "annotations": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "event": "response.completed",
+      "data": {
+        "type": "response.completed",
+        "sequence_number": 17,
+        "response": {
+          "id": "resp_demo",
+          "object": "response",
+          "created_at": 1,
+          "status": "completed",
+          "error": null,
+          "incomplete_details": null,
+          "instructions": null,
+          "model": "test-model",
+          "output": [
+            {
+              "type": "function_call",
+              "id": "fc_demo_0",
+              "status": "completed",
+              "call_id": "call_a",
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Boston\"}"
+            },
+            {
+              "type": "function_call",
+              "id": "fc_demo_1",
+              "status": "completed",
+              "call_id": "call_b",
+              "name": "get_time",
+              "arguments": "{}"
+            },
+            {
+              "type": "message",
+              "id": "msg_demo",
+              "status": "completed",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "Checking.",
+                  "annotations": []
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "total_tokens": 15,
+            "input_tokens_details": {
+              "cached_tokens": 0
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "tools": [],
+          "tool_choice": "auto",
+          "parallel_tool_calls": true,
+          "store": false,
+          "metadata": {},
+          "max_output_tokens": null,
+          "temperature": null,
+          "top_p": null,
+          "text": {
+            "format": {
+              "type": "text"
+            }
+          },
+          "reasoning": {},
+          "previous_response_id": null,
+          "truncation": "disabled",
+          "user": ""
+        }
+      }
+    }
+  ],
+  "source_streaming": "https://platform.openai.com/docs/api-reference/responses-streaming"
+}

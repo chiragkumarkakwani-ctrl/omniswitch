@@ -1,0 +1,47 @@
+{
+  "description": "response incomplete",
+  "source": "https://platform.claude.com/docs/en/api/messages",
+  "verified_on": "2026-10-09",
+  "kind": "response",
+  "chat_response": {
+    "id": "chat_demo",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "test-model",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Partial"
+        },
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 5,
+      "total_tokens": 15
+    }
+  },
+  "expected_response": {
+    "id": "msg_demo",
+    "type": "message",
+    "role": "assistant",
+    "model": "test-model",
+    "content": [
+      {
+        "type": "text",
+        "text": "Partial"
+      }
+    ],
+    "stop_reason": "max_tokens",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 5,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

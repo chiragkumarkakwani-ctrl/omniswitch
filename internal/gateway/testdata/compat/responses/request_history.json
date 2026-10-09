@@ -1,0 +1,95 @@
+{
+  "description": "request history",
+  "source": "https://platform.openai.com/docs/api-reference/responses/create",
+  "verified_on": "2026-10-09",
+  "kind": "request",
+  "request": {
+    "model": "test-model",
+    "input": [
+      {
+        "role": "user",
+        "content": "Weather?"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Checking.",
+            "annotations": []
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "call_id": "call_a",
+        "name": "get_weather",
+        "arguments": "{\"city\":\"Boston\"}"
+      },
+      {
+        "type": "function_call",
+        "call_id": "call_b",
+        "name": "get_time",
+        "arguments": "{}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_a",
+        "output": "Sunny"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_b",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Noon"
+          }
+        ]
+      }
+    ]
+  },
+  "expected_chat": {
+    "model": "test-model",
+    "store": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Weather?"
+      },
+      {
+        "role": "assistant",
+        "content": "Checking.",
+        "tool_calls": [
+          {
+            "id": "call_a",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Boston\"}"
+            }
+          },
+          {
+            "id": "call_b",
+            "type": "function",
+            "function": {
+              "name": "get_time",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_a",
+        "content": "Sunny"
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_b",
+        "content": "Noon"
+      }
+    ]
+  }
+}

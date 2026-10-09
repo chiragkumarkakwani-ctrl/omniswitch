@@ -1,0 +1,86 @@
+{
+  "description": "response incomplete",
+  "source": "https://platform.openai.com/docs/api-reference/responses/create",
+  "verified_on": "2026-10-09",
+  "kind": "response",
+  "request": {
+    "model": "test-model",
+    "input": "Hi"
+  },
+  "chat_response": {
+    "id": "chat_demo",
+    "object": "chat.completion",
+    "created": 1,
+    "model": "test-model",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Partial"
+        },
+        "finish_reason": "length"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 5,
+      "total_tokens": 15
+    }
+  },
+  "expected_response": {
+    "id": "resp_demo",
+    "object": "response",
+    "created_at": 1,
+    "status": "incomplete",
+    "error": null,
+    "incomplete_details": {
+      "reason": "max_output_tokens"
+    },
+    "instructions": null,
+    "model": "test-model",
+    "output": [
+      {
+        "type": "message",
+        "id": "msg_demo",
+        "status": "incomplete",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Partial",
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 5,
+      "total_tokens": 15,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "tools": [],
+    "tool_choice": "auto",
+    "parallel_tool_calls": true,
+    "store": false,
+    "metadata": {},
+    "max_output_tokens": null,
+    "temperature": null,
+    "top_p": null,
+    "text": {
+      "format": {
+        "type": "text"
+      }
+    },
+    "reasoning": {},
+    "previous_response_id": null,
+    "truncation": "disabled",
+    "user": ""
+  }
+}
