@@ -2,6 +2,7 @@ package policy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -86,23 +87,27 @@ func ValidateRule(expression string) error {
 }
 
 func RuleFromFile(path string) (Rule, error) {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".yaml", ".yml":
-		return ruleFromSpecFile(path)
-	}
-
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Rule{}, fmt.Errorf("open policy file: %w", err)
 	}
-	defer file.Close()
+	return RuleFromBytes(path, data)
+}
+
+// RuleFromBytes parses CEL or a .yaml/.yml Policy document. The name is a
+// source label, not a path to read; callers can supply safely loaded bytes.
+func RuleFromBytes(path string, data []byte) (Rule, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return ruleFromSpecBytes(path, data)
+	}
 
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	reason := ""
 	version := ""
 	expressionLines := []string{}
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		line := strings.TrimPrefix(scanner.Text(), "\uFEFF")
 		trimmed := strings.TrimSpace(line)
@@ -267,8 +272,8 @@ func (e *CELEngine) compileRule(rule Rule) (compiledRule, error) {
 	}, nil
 }
 
-func ruleFromSpecFile(path string) (Rule, error) {
-	document, err := spec.LoadPolicy(path)
+func ruleFromSpecBytes(path string, data []byte) (Rule, error) {
+	document, err := spec.ParsePolicy(data)
 	if err != nil {
 		return Rule{}, err
 	}

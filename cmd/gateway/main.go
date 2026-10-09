@@ -142,7 +142,7 @@ func runServe() {
 	feedbackHandler := feedback.New(st)
 	promptHandler := prompt.New(st)
 	orgHandler := org.New(st)
-	evalHandler := eval.NewHandler(st)
+	evalHandler := eval.NewHandler(settings.policyDir)
 	vaultHandler := vault.NewHandler(vaultManager)
 	dash := dashboard.New(st)
 	dash.SetConfigPath(settings.configPath)

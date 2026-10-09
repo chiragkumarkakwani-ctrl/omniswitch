@@ -22,6 +22,7 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 		"config_path": settings.configPath,
 		"gateway": map[string]any{
 			"listen":                   settings.listenAddr,
+			"policy_dir":               settings.policyDir,
 			"auth_enabled":             settings.authEnabled,
 			"cache_threshold":          settings.cacheThreshold,
 			"cache_ttl":                settings.cacheTTL.String(),
@@ -181,6 +182,7 @@ func routeSummaries(routes map[string]router.Route) []map[string]any {
 		summaries = append(summaries, map[string]any{
 			"model":           name,
 			"provider":        route.Provider,
+			"strategy":        route.Strategy,
 			"fallbacks":       append([]string(nil), route.Fallbacks...),
 			"max_retries":     route.MaxRetries,
 			"retry_backoff":   route.RetryBackoff,
