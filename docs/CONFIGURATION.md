@@ -204,6 +204,27 @@ providers:
     models: [gpt-4o]
 ```
 
+## Model catalog
+
+`/v1/models` and cost-based routing (the `cost-optimal` strategy) for OpenAI,
+Anthropic, Google, and Groq are driven by a single consolidated catalog file,
+embedded at build time via `go:embed`:
+`internal/provider/catalog/models.json`.
+
+Each entry records the model ID, `owned_by`, USD price per 1M input/output
+tokens, a `source_url`, and the `verified_on` date it was last checked against
+the provider's public pricing page. There is no live pricing fetch; updating
+prices/models is a manual edit to this file (add a row, keep `verified_on`
+current) followed by `go test ./internal/provider/...`. Bedrock and Cohere
+also draw their default model lists from the catalog; Bedrock pricing then
+matches by substring against the catalog's canonical Claude model IDs because
+Bedrock model IDs vary by region/cross-region-inference-profile prefix.
+Models not present in the catalog return zero estimated cost rather than a
+guessed default. Mistral, DeepSeek, and xAI are reachable via `type: custom`
+presets (see above) and have reference-only catalog rows under provider
+`custom-preset-reference` for documentation purposes; they are not read by any
+adapter.
+
 ## Observability
 
 OmniSwitch can export gateway and provider spans to any OTLP-compatible backend.
