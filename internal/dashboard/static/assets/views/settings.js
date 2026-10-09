@@ -5,6 +5,7 @@ import { setQuery } from "../lib/router.js";
 import { utc, number, retentionDuration, windows } from "../lib/format.js";
 import {
   page,
+  scopeLabel,
   panel,
   pill,
   button,
@@ -337,6 +338,7 @@ export async function settings(ctx) {
       "Settings",
       "Applied runtime configuration, validated file editing, and automatic data retention.",
     ),
+    scopeLabel("Settings visible to your key · gateway-wide values"),
     tabs(
       [
         ["status", "Applied settings"],

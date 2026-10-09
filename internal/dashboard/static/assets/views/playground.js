@@ -4,6 +4,7 @@ import { hasRole } from "../lib/state.js";
 import { tokens, ms, cost, number } from "../lib/format.js";
 import {
   page,
+  scopeLabel,
   panel,
   button,
   pill,
@@ -397,6 +398,7 @@ export async function playground(ctx) {
       "Stream a gateway response and inspect its trace.",
       pill("Live request", "amber"),
     ),
+    scopeLabel("Requests use your key unless an override is supplied"),
     !canSend ? notice("Requires member role to send requests or save prompts.") : null,
     !models.data?.length
       ? notice(

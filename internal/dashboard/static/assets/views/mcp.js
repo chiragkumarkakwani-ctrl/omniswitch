@@ -89,7 +89,7 @@ export async function mcp(ctx) {
             "JSON-RPC methods": (a.methods || []).join(", "),
           }),
           a.task_store === "in_memory"
-            ? notice("Tasks are in memory and lost on restart. No durable orchestration.")
+            ? notice("Task state is in memory and lost on restart. No durable orchestration.")
             : null,
           a.cancel === "best_effort"
             ? notice("Cancellation is best effort, not guaranteed upstream interruption.")
@@ -287,9 +287,11 @@ export async function mcp(ctx) {
                 {
                   label: "Trace",
                   render: (d) =>
-                    link(d.trace_id, "/requests/" + encodeURIComponent(d.trace_id), {
-                      class: "text-link mono",
-                    }),
+                    d.trace_id
+                      ? link(d.trace_id, "/requests/" + encodeURIComponent(d.trace_id), {
+                          class: "text-link mono",
+                        })
+                      : note("Not recorded"),
                 },
               ],
               decisions.decisions,

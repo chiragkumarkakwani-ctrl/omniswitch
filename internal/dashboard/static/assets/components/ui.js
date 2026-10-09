@@ -139,14 +139,14 @@ export const input = (attrs = {}) => h("input", { class: "input", ...attrs });
 export const textarea = (attrs = {}) =>
   h("textarea", { class: "input mono", rows: 6, spellcheck: "false", ...attrs });
 export const adminHint = () => (hasRole("admin") ? null : note("Requires admin role"));
-export const scopeLabel = () =>
+export const scopeLabel = (message = "Showing data for your key") =>
   hasRole("admin")
     ? null
     : h(
         "p",
         { class: "scope-label" },
         icon("lock"),
-        "Showing data for your key",
+        message,
         getSession()?.name ? " · " + getSession().name : "",
       );
 export async function copy(value, control) {

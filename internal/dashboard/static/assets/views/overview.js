@@ -118,10 +118,12 @@ function content(data, ctx) {
           {
             label: "Time · UTC",
             render: (r) =>
-              link(utc(r.timestamp, true), "/requests/" + encodeURIComponent(r.trace_id), {
-                class: "text-link mono",
-                "aria-label": "Open trace " + r.trace_id,
-              }),
+              r.trace_id
+                ? link(utc(r.timestamp, true), "/requests/" + encodeURIComponent(r.trace_id), {
+                    class: "text-link mono",
+                    "aria-label": "Open trace " + r.trace_id,
+                  })
+                : h("span", { class: "mono" }, utc(r.timestamp, true)),
           },
           { label: "Model / provider", render: (r) => h("div", {}, r.model + " · " + r.provider) },
           { label: "Status", render: (r) => pill(r.status) },

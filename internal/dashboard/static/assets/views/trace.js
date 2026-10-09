@@ -44,8 +44,17 @@ export async function trace(ctx) {
       ),
     );
   const meta = metadata(log.metadata);
-  const spans = (data.spans || meta._spans || [])
-    .map((s) => ({ ...s, metadata: metadata(s.metadata) }))
+  const recordedSpans = data.spans || meta._spans;
+  const spans = (Array.isArray(recordedSpans) ? recordedSpans : [])
+    .filter(
+      (span) =>
+        span &&
+        typeof span.name === "string" &&
+        Number.isFinite(Date.parse(span.start)) &&
+        typeof span.duration_ms === "number" &&
+        span.duration_ms >= 0,
+    )
+    .map((span) => ({ ...span, metadata: metadata(span.metadata) }))
     .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   const inspector = h(
     "div",

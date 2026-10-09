@@ -162,9 +162,11 @@ export async function requests(ctx) {
         h(
           "div",
           {},
-          link(r.trace_id || "Not recorded", "/requests/" + encodeURIComponent(r.trace_id), {
-            class: "text-link mono",
-          }),
+          r.trace_id
+            ? link(r.trace_id, "/requests/" + encodeURIComponent(r.trace_id), {
+                class: "text-link mono",
+              })
+            : note("Not recorded"),
           h("div", { class: "muted mono" }, r.session_id || "No session"),
         ),
     },
