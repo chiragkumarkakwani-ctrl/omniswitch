@@ -264,7 +264,7 @@ func (r *Router) ImageGeneration(ctx context.Context, req provider.ImageRequest,
 	for index, current := range providers {
 		imageProvider, ok := current.(provider.ImageProvider)
 		if !ok {
-			lastErr = fmt.Errorf("provider %q does not support image generation", current.Name())
+			lastErr = preferMediaError(lastErr, &provider.UnsupportedEndpointError{Provider: current.Name(), Endpoint: "/v1/images/generations"})
 			continue
 		}
 		if !r.allowProvider(current.Name()) {
@@ -283,8 +283,11 @@ func (r *Router) ImageGeneration(ctx context.Context, req provider.ImageRequest,
 			}
 			return response, meta, nil
 		}
-		r.recordFailure(current.Name())
-		lastErr = err
+		var unsupported *provider.UnsupportedEndpointError
+		if !errors.As(err, &unsupported) {
+			r.recordFailure(current.Name())
+		}
+		lastErr = preferMediaError(lastErr, err)
 	}
 	return provider.ImageResponse{}, provider.ProviderMeta{Error: errorString(lastErr)}, fmt.Errorf("all image providers exhausted: %w", lastErr)
 }
@@ -300,7 +303,7 @@ func (r *Router) Transcription(ctx context.Context, req provider.TranscriptionRe
 	for index, current := range providers {
 		audioProvider, ok := current.(provider.AudioProvider)
 		if !ok {
-			lastErr = fmt.Errorf("provider %q does not support audio transcription", current.Name())
+			lastErr = preferMediaError(lastErr, &provider.UnsupportedEndpointError{Provider: current.Name(), Endpoint: "/v1/audio/transcriptions"})
 			continue
 		}
 		if !r.allowProvider(current.Name()) {
@@ -319,8 +322,11 @@ func (r *Router) Transcription(ctx context.Context, req provider.TranscriptionRe
 			}
 			return response, meta, nil
 		}
-		r.recordFailure(current.Name())
-		lastErr = err
+		var unsupported *provider.UnsupportedEndpointError
+		if !errors.As(err, &unsupported) {
+			r.recordFailure(current.Name())
+		}
+		lastErr = preferMediaError(lastErr, err)
 	}
 	return provider.TranscriptionResponse{}, provider.ProviderMeta{Error: errorString(lastErr)}, fmt.Errorf("all transcription providers exhausted: %w", lastErr)
 }
@@ -336,7 +342,7 @@ func (r *Router) Speech(ctx context.Context, req provider.SpeechRequest, provide
 	for index, current := range providers {
 		audioProvider, ok := current.(provider.AudioProvider)
 		if !ok {
-			lastErr = fmt.Errorf("provider %q does not support audio speech", current.Name())
+			lastErr = preferMediaError(lastErr, &provider.UnsupportedEndpointError{Provider: current.Name(), Endpoint: "/v1/audio/speech"})
 			continue
 		}
 		if !r.allowProvider(current.Name()) {
@@ -355,10 +361,23 @@ func (r *Router) Speech(ctx context.Context, req provider.SpeechRequest, provide
 			return &cancelReadCloser{ReadCloser: body, cancel: cancel}, contentType, meta, nil
 		}
 		cancel()
-		r.recordFailure(current.Name())
-		lastErr = err
+		var unsupported *provider.UnsupportedEndpointError
+		if !errors.As(err, &unsupported) {
+			r.recordFailure(current.Name())
+		}
+		lastErr = preferMediaError(lastErr, err)
 	}
 	return nil, "", provider.ProviderMeta{Error: errorString(lastErr)}, fmt.Errorf("all speech providers exhausted: %w", lastErr)
+}
+
+// A later capability mismatch must not hide a real upstream failure from an
+// earlier capable provider in a mixed fallback chain.
+func preferMediaError(previous, next error) error {
+	var unsupported *provider.UnsupportedEndpointError
+	if errors.As(next, &unsupported) && previous != nil && !errors.As(previous, &unsupported) {
+		return previous
+	}
+	return next
 }
 
 type cancelReadCloser struct {
