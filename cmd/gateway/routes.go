@@ -264,7 +264,7 @@ func wrapGatewayMiddleware(settings runtimeSettings, st *store.Store, mux http.H
 		return nil, nil, fmt.Errorf("failed to initialize rate limiter: %w", err)
 	}
 	handler := gateway.CORSMiddlewareWithOrigins(settings.corsOrigins, gateway.LoggingMiddleware(auth.Wrap(authorize.Wrap(rateLimiter.Wrap(mux)))))
-	return handler, closeRateLimiter, nil
+	return gateway.MessagesCompatibilityMiddleware(handler), closeRateLimiter, nil
 }
 
 // newTopMux serves /healthz and /readyz ahead of the auth, authorization,

@@ -286,6 +286,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if configRef != "" {
 		cacheProvider = "config:" + configRef + "|" + cacheProvider
 	}
+	cacheProvider = compatibleCacheProvider(ctx, cacheProvider)
 	stageStart = time.Now()
 	cachedResp, cacheHit := h.cachedResponse(ctx, tenantCacheScope, cacheProvider, backendReq)
 	recordTraceSpan(ctx, "cache_lookup", cacheProvider, map[bool]string{true: "hit", false: "miss"}[cacheHit], stageStart, nil)
@@ -301,6 +302,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": map[string]string{"message": disp.Reason, "type": "guardrail", "code": "guardrail_triggered"},
 			})
+			return
+		}
+
+		if !h.enforceCompatibleResponse(w, ctx, logContext{
+			ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Response: &cachedResp, APIKeyID: apiKeyID, Cached: true,
+		}) {
 			return
 		}
 		meta := provider.ProviderMeta{Provider: "semantic-cache", Model: req.Model, Cached: true, Timestamp: time.Now().UTC()}
@@ -405,6 +412,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		break
+	}
+
+	if !h.enforceCompatibleResponse(w, ctx, logContext{
+		ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Response: &resp, Meta: &meta, APIKeyID: apiKeyID,
+	}) {
+		return
 	}
 
 	h.storeCache(ctx, tenantCacheScope, cacheProvider, backendReq, resp)
@@ -694,6 +707,12 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 					}
 					continue
 				}
+			}
+
+			if !h.enforceCompatibleResponse(w, ctx, logContext{
+				ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Response: &aggregated, Meta: &meta, APIKeyID: streamCtx.APIKeyID,
+			}) {
+				return
 			}
 
 			setStreamHeaders(w, streamCtx.TraceID, streamCtx.SessionID)
@@ -1049,19 +1068,17 @@ func writeStream(w http.ResponseWriter, resp provider.ChatResponse) {
 		finishReason = "stop"
 	}
 
-	words := strings.Fields(content)
-	if len(words) == 0 && content != "" {
-		words = []string{content}
+	// Cached/redacted responses have no live token boundaries. Preserve
+	// their exact whitespace instead of synthesizing words with strings.Fields.
+	var tokens []string
+	if content != "" {
+		tokens = []string{content}
 	}
-	for i, word := range words {
-		token := word
-		if i < len(words)-1 {
-			token += " "
-		}
+	for _, token := range tokens {
 		chunk := map[string]any{
 			"id":      resp.ID,
 			"object":  "chat.completion.chunk",
-			"created": time.Now().Unix(),
+			"created": resp.Created,
 			"model":   resp.Model,
 			"choices": []map[string]any{
 				{
@@ -1083,7 +1100,7 @@ func writeStream(w http.ResponseWriter, resp provider.ChatResponse) {
 		chunk := provider.ChatResponseChunk{
 			ID:      resp.ID,
 			Object:  "chat.completion.chunk",
-			Created: time.Now().Unix(),
+			Created: resp.Created,
 			Model:   resp.Model,
 			Choices: []provider.ChunkChoice{{Index: 0, Delta: provider.Message{ToolCalls: deltas}}},
 		}
@@ -1094,8 +1111,9 @@ func writeStream(w http.ResponseWriter, resp provider.ChatResponse) {
 	finalChunk := map[string]any{
 		"id":      resp.ID,
 		"object":  "chat.completion.chunk",
-		"created": time.Now().Unix(),
+		"created": resp.Created,
 		"model":   resp.Model,
+		"usage":   resp.Usage,
 		"choices": []map[string]any{
 			{
 				"index":         0,

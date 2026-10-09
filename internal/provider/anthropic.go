@@ -34,14 +34,19 @@ func (a *Anthropic) Models() []ModelInfo {
 
 // anthropicRequest is the Anthropic API request format.
 type anthropicRequest struct {
-	Model        string                 `json:"model"`
-	Messages     []anthropicMessage     `json:"messages"`
-	MaxTokens    int                    `json:"max_tokens"`
-	System       string                 `json:"system,omitempty"`
-	Stream       bool                   `json:"stream,omitempty"`
-	Tools        []anthropicTool        `json:"tools,omitempty"`
-	ToolChoice   *anthropicToolChoice   `json:"tool_choice,omitempty"`
-	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Model         string                 `json:"model"`
+	Messages      []anthropicMessage     `json:"messages"`
+	MaxTokens     int                    `json:"max_tokens"`
+	System        string                 `json:"system,omitempty"`
+	Stream        bool                   `json:"stream,omitempty"`
+	Tools         []anthropicTool        `json:"tools,omitempty"`
+	ToolChoice    *anthropicToolChoice   `json:"tool_choice,omitempty"`
+	OutputConfig  *anthropicOutputConfig `json:"output_config,omitempty"`
+	Temperature   *float64               `json:"temperature,omitempty"`
+	TopP          *float64               `json:"top_p,omitempty"`
+	TopK          *int                   `json:"top_k,omitempty"`
+	StopSequences []string               `json:"stop_sequences,omitempty"`
+	Metadata      map[string]string      `json:"metadata,omitempty"`
 }
 
 type anthropicOutputConfig struct {
@@ -99,6 +104,9 @@ func (a *Anthropic) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRe
 	if err != nil {
 		meta.Error = err.Error()
 		return ChatResponse{}, meta, err
+	}
+	if topK, ok := ctx.Value(anthropicTopKKey{}).(int); ok {
+		anthReq.TopK = &topK
 	}
 	body, err := json.Marshal(anthReq)
 	if err != nil {
@@ -202,6 +210,9 @@ func (a *Anthropic) ChatCompletionStream(ctx context.Context, req ChatRequest) (
 		meta.Error = err.Error()
 		return nil, meta, err
 	}
+	if topK, ok := ctx.Value(anthropicTopKKey{}).(int); ok {
+		anthReq.TopK = &topK
+	}
 	body, err := json.Marshal(anthReq)
 	if err != nil {
 		return nil, meta, err
@@ -276,9 +287,13 @@ func toAnthropicRequest(req ChatRequest, stream bool) (anthropicRequest, error) 
 	}
 
 	anthReq := anthropicRequest{
-		Model:     req.Model,
-		MaxTokens: 4096,
-		Stream:    stream,
+		Model:       req.Model,
+		MaxTokens:   4096,
+		Stream:      stream,
+		Temperature: req.Temperature, TopP: req.TopP, StopSequences: req.Stop,
+	}
+	if req.User != "" {
+		anthReq.Metadata = map[string]string{"user_id": req.User}
 	}
 	if req.MaxTokens != nil {
 		anthReq.MaxTokens = *req.MaxTokens
@@ -343,7 +358,9 @@ func toAnthropicRequest(req ChatRequest, stream bool) (anthropicRequest, error) 
 		if anthReq.ToolChoice == nil {
 			anthReq.ToolChoice = &anthropicToolChoice{Type: "auto"}
 		}
-		anthReq.ToolChoice.DisableParallelToolUse = &disable
+		if anthReq.ToolChoice.Type != "none" {
+			anthReq.ToolChoice.DisableParallelToolUse = &disable
+		}
 	}
 
 	for _, msg := range req.Messages {
@@ -425,3 +442,11 @@ func mapAnthropicStopReason(reason string) string {
 
 // Pricing for Anthropic models is resolved from the consolidated catalog
 // (internal/provider/catalog/models.json); see pricingFor in pricing.go.
+
+// WithAnthropicTopK applies Messages top_k only to the native Anthropic adapter,
+// including after routing/fallback. It never adds an OpenAI passthrough field.
+func WithAnthropicTopK(ctx context.Context, topK int) context.Context {
+	return context.WithValue(ctx, anthropicTopKKey{}, topK)
+}
+
+type anthropicTopKKey struct{}
