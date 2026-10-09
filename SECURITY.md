@@ -41,6 +41,8 @@ We practice coordinated disclosure: we will work with you on a disclosure timeli
 
 ## Hardening Guidance
 
+Before installing a release, [verify the download's signature and build provenance](docs/RELEASES.md#verify-a-download). Checksums alone do not authenticate the publisher.
+
 Before running OmniSwitch against production traffic, read the [Production Notes](docs/DEPLOYMENT.md#production-notes) in `docs/DEPLOYMENT.md` for authentication, network exposure, and secret-handling guidance.
 
 ## Out of Scope

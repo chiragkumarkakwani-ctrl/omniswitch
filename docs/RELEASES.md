@@ -13,22 +13,57 @@ OmniSwitch follows [SemVer](https://semver.org/) with beta-specific caveats whil
 
 ## Verifying a release
 
-Every release publishes a `checksums.txt` alongside the archives. To verify a downloaded archive on Linux/macOS:
+Starting with v0.2.0, releases publish keyless cosign signatures for `checksums.txt` (`checksums.txt.sig` and `checksums.txt.pem`), a Syft SPDX JSON SBOM per archive, signed multi-arch image manifests, and GitHub build-provenance attestations for the archives, checksums, and image. Older releases may provide checksums only.
+
+### Verify a download
+
+Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) and a recent [GitHub CLI](https://cli.github.com/). `gh` needs GitHub authentication to look up attestations. Download these files into an empty directory; change the tag and platform as needed:
 
 ```bash
-curl -fsSLO https://github.com/omniswitch-dev/omniswitch/releases/download/<tag>/checksums.txt
-curl -fsSLO https://github.com/omniswitch-dev/omniswitch/releases/download/<tag>/omniswitch_<tag>_<os>_<arch>.tar.gz
-sha256sum -c --ignore-missing checksums.txt   # macOS: shasum -a 256 -c --ignore-missing checksums.txt
+set -euo pipefail
+TAG=v0.2.0
+ARCHIVE="omniswitch_${TAG#v}_linux_amd64.tar.gz"
+BASE="https://github.com/omniswitch-dev/omniswitch/releases/download/${TAG}"
+for FILE in "$ARCHIVE" checksums.txt checksums.txt.sig checksums.txt.pem; do
+  curl -fsSLO "${BASE}/${FILE}"
+done
+
+cosign verify-blob checksums.txt \
+  --signature checksums.txt.sig \
+  --certificate checksums.txt.pem \
+  --certificate-identity-regexp '^https://github\.com/omniswitch-dev/omniswitch/\.github/workflows/release\.yml@refs/tags/v.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --check --ignore-missing checksums.txt
+
+gh attestation verify "$ARCHIVE" --repo omniswitch-dev/omniswitch \
+  --signer-workflow omniswitch-dev/omniswitch/.github/workflows/release.yml \
+  --source-ref "refs/tags/${TAG}"
 ```
 
-A line ending in `OK` for your archive confirms the download matches what was built and published.
-
-For the container image, compare the pulled digest against the digest shown on the release's GitHub Actions run summary:
+Archive names use the **version without the leading `v`**: `omniswitch_0.2.0_linux_amd64.tar.gz`, not `omniswitch_v0.2.0_linux_amd64.tar.gz`. Windows archives end in `.zip`. On macOS, replace the `sha256sum` command with:
 
 ```bash
-docker pull ghcr.io/omniswitch-dev/omniswitch:<tag>
-docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/omniswitch-dev/omniswitch:<tag>
+awk -v file="$ARCHIVE" '$2 == file { print }' checksums.txt | shasum -a 256 --check
 ```
+
+Do not extract or run the binary unless all checks succeed. The cosign check authenticates the checksum file's publisher, SHA-256 binds the archive to that signed file, and the attestation confirms the repository, workflow, and release ref that built it. SHA-256 alone detects corruption but does not authenticate the publisher.
+
+`scripts/verify-install.sh` uses the same signature and SHA-256 checks before extracting a release when cosign is on `PATH`; a failed or missing signature is fatal. Without cosign it retains `install.sh`'s SHA-256-only verification. `OMNISWITCH_BIN` mode tests an already-built local binary and does not verify release signatures.
+
+For the container image (authenticate to GHCR if your client requires it):
+
+```bash
+IMAGE="ghcr.io/omniswitch-dev/omniswitch:${TAG#v}"
+cosign verify "$IMAGE" \
+  --certificate-identity-regexp '^https://github\.com/omniswitch-dev/omniswitch/\.github/workflows/release\.yml@refs/tags/v.*$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify "oci://${IMAGE}" --repo omniswitch-dev/omniswitch \
+  --bundle-from-oci \
+  --signer-workflow omniswitch-dev/omniswitch/.github/workflows/release.yml \
+  --source-ref "refs/tags/${TAG}"
+```
+
+Pin the verified `sha256:` manifest digest rather than `latest` in production. Each archive's SBOM is named `<archive>.sbom.spdx.json` and is covered by the signed checksums.
 
 ## Release notes template
 

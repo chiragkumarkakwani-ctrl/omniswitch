@@ -9,7 +9,8 @@
 #         OMNISWITCH_BIN=/tmp/omniswitch-dev scripts/verify-install.sh
 #   2. CI / release verification: leave OMNISWITCH_BIN unset. The script runs
 #      install.sh (honoring OMNISWITCH_VERSION) into a temporary directory and
-#      verifies the resulting binary.
+#      verifies the resulting binary. When cosign is installed, it downloads
+#      and authenticates the archive before extracting it instead.
 #         OMNISWITCH_VERSION=v0.2.0-beta.1 scripts/verify-install.sh
 #
 # Env vars:
@@ -28,7 +29,7 @@
 # subcommand or a non-200 from /healthz, /readyz, or /v1/models -- by design,
 # running this against an OmniSwitch build that predates those endpoints
 # fails loudly rather than silently skipping the check.
-set -u
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -66,6 +67,71 @@ fail() {
 WORKDIR="$(mktemp -d)"
 SERVER_LOG="${WORKDIR}/server.log"
 
+install_signed_release() {
+    local repo=omniswitch-dev/omniswitch
+    local version="${OMNISWITCH_VERSION:-}" os arch archive binary base directory expected actual
+    if [ -z "$version" ]; then
+        local metadata
+        metadata=$(curl -fsSL --retry 3 "https://api.github.com/repos/${repo}/releases/latest") || return 1
+        version=$(printf '%s\n' "$metadata" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+    fi
+    if [ -z "$version" ]; then
+        echo "FAIL: could not resolve the release tag" >&2
+        return 1
+    fi
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    case "$os" in
+        linux|darwin) ;;
+        mingw*|msys*|cygwin*) os=windows ;;
+        *) echo "FAIL: unsupported OS: ${os}" >&2; return 1 ;;
+    esac
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) echo "FAIL: unsupported architecture: ${arch}" >&2; return 1 ;;
+    esac
+    binary=omniswitch
+    archive="omniswitch_${version#v}_${os}_${arch}.tar.gz"
+    if [ "$os" = windows ]; then
+        binary=omniswitch.exe
+        archive="omniswitch_${version#v}_${os}_${arch}.zip"
+    fi
+    base="https://github.com/${repo}/releases/download/${version}"
+    directory="${WORKDIR}/release"
+    mkdir -p "$directory" || return 1
+    local file
+    for file in checksums.txt checksums.txt.sig checksums.txt.pem; do
+        curl -fsSL --retry 3 -o "${directory}/${file}" "${base}/${file}" || return 1
+    done
+    echo "==> Authenticating checksums.txt with cosign"
+    cosign verify-blob "${directory}/checksums.txt" \
+        --signature "${directory}/checksums.txt.sig" --certificate "${directory}/checksums.txt.pem" \
+        --certificate-identity-regexp '^https://github\.com/omniswitch-dev/omniswitch/\.github/workflows/release\.yml@refs/tags/v.*$' \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com || return 1
+    curl -fsSL --retry 3 -o "${directory}/${archive}" "${base}/${archive}" || return 1
+    expected=$(awk -v file="$archive" '$2 == file || $2 == "*"file { print $1 }' "${directory}/checksums.txt")
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "${directory}/${archive}" | awk '{ print $1 }') || return 1
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "${directory}/${archive}" | awk '{ print $1 }') || return 1
+    else
+        echo "FAIL: sha256sum or shasum is required" >&2
+        return 1
+    fi
+    if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+        echo "FAIL: ${archive} does not match the signed checksums.txt" >&2
+        return 1
+    fi
+    # Extract only the verified gateway binary, never an unauthenticated archive.
+    if [ "$os" = windows ]; then
+        unzip -q "${directory}/${archive}" "$binary" -d "$directory" || return 1
+    else
+        tar -xzf "${directory}/${archive}" -C "$directory" "$binary" || return 1
+    fi
+    install -m 0755 "${directory}/${binary}" "${INSTALL_DIR}/${binary}"
+}
+
 # --- Resolve the binary -----------------------------------------------------
 
 if [ -n "${OMNISWITCH_BIN:-}" ]; then
@@ -76,12 +142,20 @@ if [ -n "${OMNISWITCH_BIN:-}" ]; then
     fi
     echo "==> Using pre-built binary: ${BIN}"
 else
-    echo "==> Installing via install.sh (OMNISWITCH_VERSION=${OMNISWITCH_VERSION:-<latest>})"
     INSTALL_DIR="${WORKDIR}/bin"
     mkdir -p "${INSTALL_DIR}"
-    if ! OMNISWITCH_INSTALL="${INSTALL_DIR}" sh "${REPO_ROOT}/install.sh"; then
-        echo "FAIL: install.sh did not complete successfully" >&2
-        exit 1
+    if command -v cosign >/dev/null 2>&1; then
+        echo "==> Installing a signature-verified release (OMNISWITCH_VERSION=${OMNISWITCH_VERSION:-<latest>})"
+        if ! install_signed_release; then
+            echo "FAIL: signature-verified installation did not complete successfully" >&2
+            exit 1
+        fi
+    else
+        echo "==> cosign not found; install.sh verifies SHA-256 only"
+        if ! OMNISWITCH_INSTALL="${INSTALL_DIR}" sh "${REPO_ROOT}/install.sh"; then
+            echo "FAIL: install.sh did not complete successfully" >&2
+            exit 1
+        fi
     fi
     BIN="${INSTALL_DIR}/omniswitch"
     if [ ! -x "${BIN}" ]; then
