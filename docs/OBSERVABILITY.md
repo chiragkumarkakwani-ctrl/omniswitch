@@ -180,6 +180,7 @@ even when public access is configured. The read-only config summary exposes
 | `omniswitch_rate_limit_rejections_total` | Counter | `policy` | Rejections recorded by the rate/spend limiter integration hook |
 | `omniswitch_provider_circuit_state` | Gauge | `provider` | Scrape-time state: `0` closed, `1` half-open, `2` open |
 | `omniswitch_build_info` | Gauge | `version`, `commit` | One sample of value `1` for this binary's build |
+| `omniswitch_metrics_series_overflow_total` | Counter | `family` | Metric observations folded into the family's overflow series |
 
 - `endpoint` comes from the original request path: `chat_completions`,
   `responses`, `messages`, `embeddings`, `moderations`, or `rerank`. Images,
@@ -217,9 +218,51 @@ The duration histogram has cumulative inclusive bounds (seconds): `0.005`,
 `omniswitch_request_duration_seconds_bucket` (additional `le` label), `_sum`,
 and `_count`. Unobserved families expose HELP/TYPE lines but no label samples;
 rate-limit and circuit samples require their integration hooks. Labels are
-escaped and output is deterministically ordered. Avoid unconstrained model or
-provider names if metric cardinality is a concern; request IDs and API keys are
+escaped and output is deterministically ordered. Request IDs and API keys are
 never metric labels.
+
+### Label cardinality limit
+
+Each family has a hard cap of **2,000 distinct label sets**, including one
+reserved overflow series: up to 1,999 normally labeled sets plus the overflow
+set. The cap is fixed in `maxMetricSeriesPerFamily`, not a runtime setting.
+Counter and histogram families retain their existing label sets until process
+restart. After reaching the limit, every update to a new label set goes into a
+single series where **every family label value is `other`**, for example:
+
+```text
+omniswitch_requests_total{endpoint="other",provider="other",model="other",status="other"} 42
+```
+
+No valid counter increment or histogram observation is dropped. Histogram
+overflow preserves bucket, sum, and count updates; its generated `le` labels
+keep their normal fixed bounds. The cap applies to endpoint/provider groups,
+not individual bucket samples. `other` is reserved: a literal all-`other`
+label set shares the overflow series.
+
+`omniswitch_metrics_series_overflow_total{family}` increments for **each metric
+update folded into overflow**, not once per distinct rejected label set.
+For example, one usage report can produce separate input-token, output-token,
+and cost overflow events. Its `family` values are fixed metric names, so this
+counter cannot introduce caller-controlled cardinality. HELP text also
+announces the cap. To detect loss of label-level detail:
+
+```promql
+sum by (family) (rate(omniswitch_metrics_series_overflow_total[5m])) > 0
+```
+
+Overflow preserves aggregate totals but loses provider/model/status/direction
+breakdowns. Queries filtered to normal label values must include or separately
+monitor the `other` series; overflow token samples combine input and output
+usage under `direction="other"`.
+
+Scrape-time circuit gauges use the same cap, selecting retained provider names
+in sorted order on each snapshot. Their `provider="other"` sample reports the
+highest state among folded providers (open takes precedence over half-open and
+closed). Each folded snapshot entry increments the overflow counter on each
+scrape. Removed providers and obsolete overflow states still disappear from
+subsequent snapshots. Build information continues to replace its single label
+set rather than accumulating history.
 
 ### v0.2.0 metrics migration
 
