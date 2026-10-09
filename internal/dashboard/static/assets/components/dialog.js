@@ -56,7 +56,7 @@ export function formDialog(title, fields, submit, options = {}) {
   for (const spec of fields) {
     const attrs = {
       name: spec.name,
-      value: spec.value ?? "",
+      value: spec.value ?? (spec.choices ? undefined : ""),
       required: spec.required,
       min: spec.min,
       max: spec.max,

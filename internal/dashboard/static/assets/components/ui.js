@@ -123,7 +123,9 @@ export function field(label, input, help) {
     help ? h("p", { id: helpID, class: "muted small" }, help) : null,
   );
 }
-export function select(options, value = "", attrs = {}) {
+// An omitted value keeps the browser's first-option default. Explicit "" is
+// reserved for a blank option, not an accidental empty model or role selection.
+export function select(options, value, attrs = {}) {
   return h(
     "select",
     { class: "input", ...attrs, value },

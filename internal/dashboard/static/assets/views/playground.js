@@ -199,6 +199,7 @@ export async function playground(ctx) {
               const detail = await get("/api/traces/" + encodeURIComponent(result.traceID), {
                 signal: ctx.signal,
               });
+              if (ctx.signal.aborted || generation !== requestGeneration) return;
               if (detail.logs?.[0])
                 stats.append(
                   note(
@@ -209,6 +210,7 @@ export async function playground(ctx) {
                   ),
                 );
             } catch (error) {
+              if (ctx.signal.aborted || generation !== requestGeneration) return;
               if (error.status === 401) throw error;
               stats.append(note("Trace not available to this sign-in key yet."));
             }

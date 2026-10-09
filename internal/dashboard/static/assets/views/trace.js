@@ -74,6 +74,7 @@ export async function trace(ctx) {
               {
                 name: "rating",
                 label: "Rating",
+                value: "neutral",
                 choices: [
                   ["good", "Good"],
                   ["neutral", "Neutral"],
