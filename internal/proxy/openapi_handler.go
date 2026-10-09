@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/omniswitch-dev/omniswitch/internal/adapter/mcp"
 	"github.com/omniswitch-dev/omniswitch/internal/audit"
@@ -58,6 +59,11 @@ func (h *Handler) handleOpenAPICall(w http.ResponseWriter, r *http.Request, tgt 
 		}
 		if headers == nil {
 			headers = make(map[string]string)
+		}
+		for key := range headers {
+			if strings.EqualFold(key, "Authorization") {
+				delete(headers, key)
+			}
 		}
 		headers["Authorization"] = "Bearer " + token
 	}

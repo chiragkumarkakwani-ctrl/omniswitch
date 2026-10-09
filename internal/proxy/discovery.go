@@ -55,7 +55,8 @@ func (h *Handler) upstreamToolList(ctx context.Context, target target, body []by
 	defer cache.mu.Unlock()
 
 	response := cache.response
-	if response == nil || cache.key != key || !time.Now().Before(cache.expiresAt) {
+	cached := response != nil && cache.key == key && time.Now().Before(cache.expiresAt)
+	if !cached {
 		status, _, payload, err := h.callTarget(ctx, target, body, headers)
 		if err != nil {
 			return nil, err
@@ -77,7 +78,7 @@ func (h *Handler) upstreamToolList(ctx context.Context, target target, body []by
 	if result.Result == nil || result.Error != nil {
 		return nil, fmt.Errorf("upstream tools/list did not return a result")
 	}
-	if cache.key != key || cache.response == nil || !time.Now().Before(cache.expiresAt) {
+	if !cached {
 		cache.key = key
 		cache.response = response
 		cache.expiresAt = time.Now().Add(toolListCacheTTL)

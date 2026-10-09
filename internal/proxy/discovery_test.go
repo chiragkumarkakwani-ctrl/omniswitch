@@ -98,11 +98,12 @@ func TestDiscoveryCacheReevaluatesPolicyAndExpires(t *testing.T) {
 	}
 	cache := handler.targets["default"].toolsCache
 	cache.mu.Lock()
-	if remaining := time.Until(cache.expiresAt); remaining <= 0 || remaining > toolListCacheTTL {
-		t.Fatalf("cache TTL = %s, want at most 30s", remaining)
-	}
+	remaining := time.Until(cache.expiresAt)
 	cache.expiresAt = time.Now().Add(-time.Second)
 	cache.mu.Unlock()
+	if remaining <= 0 || remaining > toolListCacheTTL {
+		t.Fatalf("cache TTL = %s, want at most 30s", remaining)
+	}
 	serveMCP(handler, body, nil)
 	if requests.Load() != 2 {
 		t.Fatalf("requests after expiry = %d, want 2", requests.Load())

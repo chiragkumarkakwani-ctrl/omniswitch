@@ -95,7 +95,7 @@ func TestGetExchangeTokenDefaultsAndConcurrentCache(t *testing.T) {
 		if r.Form.Has("client_secret") {
 			t.Error("public client should omit client_secret")
 		}
-		_, _ = w.Write([]byte(`{"access_token":"token","token_type":"bearer","expires_in":1}`))
+		_, _ = w.Write([]byte(`{"access_token":"token","token_type":"bearer","expires_in":30}`))
 	}))
 	defer endpoint.Close()
 	handler := exchangeHandler(t, &TokenExchangeConfig{TokenURL: endpoint.URL, ClientID: "client", ActorToken: "actor"})
