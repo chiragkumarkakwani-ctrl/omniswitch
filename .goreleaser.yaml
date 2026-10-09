@@ -4,7 +4,8 @@ project_name: omniswitch
 
 before:
   hooks:
-    - go mod tidy
+    # Releases must not rewrite the checked-in dependency manifests.
+    - go mod download
 
 builds:
   - id: gateway
@@ -61,6 +62,41 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.spdx.json"
+    cmd: syft
+    args:
+      - "${artifact}"
+      - --output
+      - "spdx-json=${document}"
+
+# Keep detached files for users with either cosign v2 or v3. Cosign v3
+# defaults to bundle-only signing, so explicitly select its legacy output.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - --yes
+      - --use-signing-config=false
+      - --output-signature
+      - "${signature}"
+      - --output-certificate
+      - "${certificate}"
+      - "${artifact}"
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    args:
+      - sign
+      - --yes
+      - "${artifact}@${digest}"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
@@ -130,6 +166,7 @@ docker_manifests:
       - ghcr.io/omniswitch-dev/omniswitch:{{ .Version }}-amd64
       - ghcr.io/omniswitch-dev/omniswitch:{{ .Version }}-arm64
   - name_template: ghcr.io/omniswitch-dev/omniswitch:latest
+    skip_push: auto
     image_templates:
       - ghcr.io/omniswitch-dev/omniswitch:{{ .Version }}-amd64
       - ghcr.io/omniswitch-dev/omniswitch:{{ .Version }}-arm64
