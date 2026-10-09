@@ -55,8 +55,12 @@ func TestInferenceReplicaHealthRejectsHTTPFailures(t *testing.T) {
 			defer server.Close()
 			backend := NewInferenceBackend("local", []InferenceReplica{{URL: server.URL + "/v1", Runtime: "vllm"}}, time.Hour)
 			defer backend.Close()
-			if health := waitForInferenceProbe(t, backend)[0]; health.Healthy == nil || *health.Healthy {
+			health := waitForInferenceProbe(t, backend)[0]
+			if health.Healthy == nil || *health.Healthy {
 				t.Fatalf("status %d counted as healthy: %+v", code, health)
+			}
+			if health.LatencyMS >= 3000 || health.QueueLen != 0 {
+				t.Fatalf("failed probe exposed synthetic score penalties as measurements: %+v", health)
 			}
 		})
 	}
@@ -115,7 +119,7 @@ func TestInferenceSelectionPrefersHealthyReplica(t *testing.T) {
 		},
 	}
 	backend.health.recordProbe("http://unhealthy", time.Millisecond, 0, false)
-	backend.health.recordProbe("http://healthy", time.Second, 0, true)
+	backend.health.recordProbe("http://healthy", time.Minute, 0, true)
 	replica, ok := backend.selectReplica("local-model")
 	if !ok || replica.URL != "http://healthy" {
 		t.Fatalf("selected replica = %+v/%v, want healthy replica", replica, ok)

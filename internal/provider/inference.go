@@ -194,8 +194,17 @@ func (b *InferenceBackend) selectReplica(model string) (InferenceReplica, bool) 
 	if len(candidates) == 0 {
 		return InferenceReplica{}, false
 	}
+	b.health.mu.Lock()
+	defer b.health.mu.Unlock()
 	sort.SliceStable(candidates, func(i, j int) bool {
-		return b.health.score(candidates[i]) < b.health.score(candidates[j])
+		leftHealthy, leftChecked := b.health.healthy[candidates[i].URL]
+		rightHealthy, rightChecked := b.health.healthy[candidates[j].URL]
+		leftUnhealthy := leftChecked && !leftHealthy
+		rightUnhealthy := rightChecked && !rightHealthy
+		if leftUnhealthy != rightUnhealthy {
+			return !leftUnhealthy
+		}
+		return b.health.scoreLocked(candidates[i]) < b.health.scoreLocked(candidates[j])
 	})
 	return candidates[0], true
 }
@@ -300,12 +309,12 @@ func (b *InferenceBackend) probeOnce(ctx context.Context) {
 			defer cancel()
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, inferenceHealthURL(replica), nil)
 			if err != nil {
-				b.health.recordProbe(replica.URL, 30*time.Second, 100, false)
+				b.health.recordProbe(replica.URL, time.Since(start), 0, false)
 				return
 			}
 			resp, err := b.client.Do(req)
 			if err != nil {
-				b.health.recordProbe(replica.URL, 30*time.Second, 100, false)
+				b.health.recordProbe(replica.URL, time.Since(start), 0, false)
 				return
 			}
 			defer resp.Body.Close()
@@ -314,11 +323,7 @@ func (b *InferenceBackend) probeOnce(ctx context.Context) {
 			}
 			_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&status)
 			healthy := resp.StatusCode >= 200 && resp.StatusCode < 300
-			latency := time.Since(start)
-			if !healthy {
-				latency = 30 * time.Second
-			}
-			b.health.recordProbe(replica.URL, latency, maxInt(status.QueueLen, 0), healthy)
+			b.health.recordProbe(replica.URL, time.Since(start), maxInt(status.QueueLen, 0), healthy)
 		}(replica)
 	}
 	wg.Wait()
@@ -347,12 +352,9 @@ func (t *healthTracker) recordProbe(url string, latency time.Duration, queueLen 
 	t.healthy[url] = healthy
 }
 
-func (t *healthTracker) score(replica InferenceReplica) time.Duration {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if healthy, checked := t.healthy[replica.URL]; checked && !healthy {
-		return 30 * time.Second
-	}
+// scoreLocked ranks observations without turning health penalties into fake
+// measured latency/queue data. The caller holds mu for a consistent sort.
+func (t *healthTracker) scoreLocked(replica InferenceReplica) time.Duration {
 	latency := t.latency[replica.URL]
 	if latency <= 0 {
 		latency = 500 * time.Millisecond
