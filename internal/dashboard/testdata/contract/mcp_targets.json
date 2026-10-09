@@ -1,0 +1,37 @@
+{
+  "enabled": true,
+  "targets": [
+    {
+      "name": "workspace",
+      "transport": "stdio",
+      "enabled": true,
+      "connected": true,
+      "tool_count": 3,
+      "visible": 2,
+      "hidden": 1,
+      "last_error": "",
+      "policy_path": "/etc/omniswitch/production-delete.yaml",
+      "token_exchange": {
+        "configured": false,
+        "token_url_host": "",
+        "audience": ""
+      }
+    },
+    {
+      "name": "docs",
+      "transport": "http",
+      "enabled": true,
+      "connected": true,
+      "tool_count": 6,
+      "visible": 6,
+      "hidden": 0,
+      "last_error": "",
+      "policy_path": "/etc/omniswitch/production-delete.yaml",
+      "token_exchange": {
+        "configured": false,
+        "token_url_host": "",
+        "audience": ""
+      }
+    }
+  ]
+}

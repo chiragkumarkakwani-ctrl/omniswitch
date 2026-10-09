@@ -1,0 +1,38 @@
+{
+  "period": {
+    "start": "2026-10-01T00:00:00Z",
+    "end": "2026-11-01T00:00:00Z"
+  },
+  "keys": [
+    {
+      "key_id": "key_app",
+      "cost_usd": 184.2,
+      "tokens": 9200000,
+      "cost_budget": 500,
+      "token_budget": 25000000,
+      "cost_pct": 0.3684,
+      "token_pct": 0.368,
+      "state": "ok"
+    },
+    {
+      "key_id": "key_agent",
+      "cost_usd": 62.8,
+      "tokens": 8400000,
+      "cost_budget": 100,
+      "token_budget": 10000000,
+      "cost_pct": 0.628,
+      "token_pct": 0.84,
+      "state": "near"
+    },
+    {
+      "key_id": "bootstrap-admin",
+      "cost_usd": 0,
+      "tokens": 0,
+      "cost_budget": 0,
+      "token_budget": 0,
+      "cost_pct": 0,
+      "token_pct": 0,
+      "state": "ok"
+    }
+  ]
+}

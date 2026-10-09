@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl_fixture",
+  "object": "chat.completion",
+  "created": 1791556182,
+  "model": "gpt-4o-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The fallback recovered the request. Inspect the primary provider circuit and retry policy before changing configuration."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 168,
+    "completion_tokens": 94,
+    "total_tokens": 262
+  }
+}

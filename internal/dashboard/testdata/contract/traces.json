@@ -1,0 +1,54 @@
+{
+  "trace_id": "trace_9c42a1",
+  "logs": [
+    {
+      "id": "req_1",
+      "timestamp": "2026-10-09T14:29:42Z",
+      "trace_id": "trace_9c42a1",
+      "session_id": "session_console",
+      "provider": "azure",
+      "model": "gpt-4o-mini",
+      "api_key_id": "key_app",
+      "status": "success",
+      "input_tokens": 1248,
+      "output_tokens": 328,
+      "total_tokens": 1576,
+      "cached_tokens": 0,
+      "reasoning_tokens": 0,
+      "latency_ms": 520,
+      "cost": 0.0003832,
+      "cost_source": "catalog",
+      "endpoint": "chat_completions",
+      "decision": "ALLOW",
+      "decision_reason": "PII redacted before routing",
+      "cached": false,
+      "metadata": "{\"_spans\":[{\"name\":\"auth\",\"provider\":\"\",\"start\":\"2026-10-09T14:29:42Z\",\"duration_ms\":2,\"status\":\"ok\",\"metadata\":{}},{\"name\":\"guardrail_input\",\"provider\":\"\",\"start\":\"2026-10-09T14:29:42.002000Z\",\"duration_ms\":8,\"status\":\"ok\",\"metadata\":{\"type\":\"pii\",\"action\":\"redact\",\"matched\":true}},{\"name\":\"route\",\"provider\":\"\",\"start\":\"2026-10-09T14:29:42.010000Z\",\"duration_ms\":2,\"status\":\"ok\",\"metadata\":{\"strategy\":\"fallback\",\"model\":\"gpt-4o-mini\",\"providers\":[\"openai\",\"azure\"]}},{\"name\":\"provider_attempt\",\"provider\":\"openai\",\"start\":\"2026-10-09T14:29:42.012000Z\",\"duration_ms\":120,\"status\":\"error\",\"metadata\":{\"attempt\":1,\"fallback\":false,\"http_status\":503,\"error\":\"upstream unavailable\"}},{\"name\":\"retry_backoff\",\"provider\":\"openai\",\"start\":\"2026-10-09T14:29:42.132000Z\",\"duration_ms\":80,\"status\":\"ok\",\"metadata\":{\"duration_ms\":80}},{\"name\":\"provider_attempt\",\"provider\":\"openai\",\"start\":\"2026-10-09T14:29:42.212000Z\",\"duration_ms\":104,\"status\":\"error\",\"metadata\":{\"attempt\":2,\"fallback\":false,\"http_status\":503,\"error\":\"upstream unavailable\"}},{\"name\":\"guardrail_fallback\",\"provider\":\"azure\",\"start\":\"2026-10-09T14:29:42.316000Z\",\"duration_ms\":2,\"status\":\"ok\",\"metadata\":{\"from\":\"openai\",\"to\":\"azure\",\"strategy\":\"fallback\",\"reason\":\"Retries exhausted\",\"http_status\":503}},{\"name\":\"provider_attempt\",\"provider\":\"azure\",\"start\":\"2026-10-09T14:29:42.318000Z\",\"duration_ms\":198,\"status\":\"ok\",\"metadata\":{\"attempt\":1,\"fallback\":true,\"http_status\":200}},{\"name\":\"guardrail_output\",\"provider\":\"\",\"start\":\"2026-10-09T14:29:42.516000Z\",\"duration_ms\":4,\"status\":\"ok\",\"metadata\":{\"matched\":false}}],\"fallback\":true,\"retries\":1}"
+    }
+  ],
+  "guardrail_events": [
+    {
+      "id": "ge_1",
+      "timestamp": "2026-10-09T14:29:42Z",
+      "type": "pii",
+      "action": "redact",
+      "matched": true,
+      "details": "Email pattern matched",
+      "request_id": "req_1",
+      "trace_id": "trace_9c42a1",
+      "model": "gpt-4o-mini",
+      "provider": "azure",
+      "api_key_id": "key_app"
+    }
+  ],
+  "shadow_logs": [],
+  "feedback": [
+    {
+      "id": "fb_1",
+      "trace_id": "trace_9c42a1",
+      "timestamp": "2026-10-09T14:29:42Z",
+      "score": 1,
+      "rating": "good",
+      "comment": "Fallback recovered."
+    }
+  ]
+}

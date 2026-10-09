@@ -1,0 +1,3 @@
+{
+  "rendered": "Summarize the incident and give one next step:\n\nAn upstream returned HTTP 503 twice; the Azure fallback recovered."
+}

@@ -1,0 +1,24 @@
+{
+  "policy": {
+    "request_logs": 2592000,
+    "payloads": 604800,
+    "guardrail_events": 2592000,
+    "shadow_requests": 604800,
+    "limited_and_denied": 2592000
+  },
+  "sweep_interval_seconds": 3600,
+  "payload_logging": false,
+  "last_run": {
+    "started_at": "2026-10-09T08:00:00Z",
+    "finished_at": "2026-10-09T08:00:02Z",
+    "deleted": {
+      "request_logs": 1180,
+      "guardrail_events": 24,
+      "shadow_requests": 0,
+      "semantic_cache": 0
+    },
+    "payloads_cleared": 310,
+    "error": ""
+  },
+  "next_run": "2026-10-09T09:00:00Z"
+}

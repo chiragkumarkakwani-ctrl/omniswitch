@@ -1,0 +1,30 @@
+{
+  "matched": 231,
+  "by_action": {
+    "deny": 142,
+    "redact": 89,
+    "warn": 0,
+    "log": 0,
+    "fallback": 0,
+    "reroute": 0,
+    "retry": 0
+  },
+  "by_type": [
+    {
+      "type": "injection",
+      "count": 96
+    },
+    {
+      "type": "code_leakage",
+      "count": 31
+    },
+    {
+      "type": "sql_injection",
+      "count": 15
+    },
+    {
+      "type": "pii",
+      "count": 89
+    }
+  ]
+}
