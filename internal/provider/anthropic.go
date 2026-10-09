@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,13 +18,25 @@ type Anthropic struct {
 	client  *http.Client
 }
 
+// AnthropicOption configures an Anthropic provider.
+type AnthropicOption func(*Anthropic)
+
+// WithAnthropicBaseURL points the native adapter at another Anthropic API endpoint.
+func WithAnthropicBaseURL(baseURL string) AnthropicOption {
+	return func(a *Anthropic) { a.baseURL = strings.TrimRight(baseURL, "/") }
+}
+
 // NewAnthropic creates a new Anthropic provider.
-func NewAnthropic(apiKey string) *Anthropic {
-	return &Anthropic{
+func NewAnthropic(apiKey string, options ...AnthropicOption) *Anthropic {
+	a := &Anthropic{
 		apiKey:  apiKey,
 		baseURL: "https://api.anthropic.com",
 		client:  &http.Client{Timeout: 120 * time.Second},
 	}
+	for _, option := range options {
+		option(a)
+	}
+	return a
 }
 
 func (a *Anthropic) Name() string { return "anthropic" }

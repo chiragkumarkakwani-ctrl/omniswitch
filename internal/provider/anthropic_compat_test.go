@@ -30,8 +30,7 @@ func TestAnthropicCompatOptionsReachNativeUpstream(t *testing.T) {
 				}
 			}))
 			defer upstream.Close()
-			client := NewAnthropic("test")
-			client.baseURL = upstream.URL
+			client := NewAnthropic("test", WithAnthropicBaseURL(upstream.URL+"/"))
 			maxTokens, maxCompletion, topK := 30, 40, 10
 			temperature, topP, parallel := 0.2, 0.8, false
 			request := ChatRequest{Model: "test-model", Messages: []Message{{Role: "user", Content: "hi"}}, MaxTokens: &maxTokens, MaxCompletionTokens: &maxCompletion, Temperature: &temperature, TopP: &topP, Stop: []string{"END"}, User: "user-123", ToolChoice: "required", ParallelToolCalls: &parallel, StreamOptions: &StreamOptions{IncludeUsage: true}}
