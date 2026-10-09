@@ -348,6 +348,10 @@ unavailable webhook as a guardrail trigger, while `true` ignores its failure.
 
 ## MCP Targets
 
+See [MCP policy semantics and discovery filtering](MCP.md) for per-tool
+visibility and call enforcement, bare-name matching, audit counts, and the
+30-second discovery cache.
+
 The legacy `upstream` is a default HTTP MCP upstream. `targets` adds federated
 HTTP MCP servers. `tools/list` combines allowed target tools under stable
 `target__tool` names, and `tools/call` dispatches the prefixed tool to the

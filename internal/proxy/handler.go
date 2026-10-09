@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -93,6 +94,7 @@ type target struct {
 	openAPITools       []openAPITool
 	tokenExchange      *TokenExchangeConfig
 	tokenCache         *tokenCache
+	toolsCache         *toolListCache
 }
 
 type tokenCache struct {
@@ -156,7 +158,7 @@ func NewMultiHandler(engine policy.Engine, auditor audit.Logger, configs []Targe
 		if transport == "" {
 			transport = "http"
 		}
-		configuredTarget := target{name: name, headers: cloneHeaders(config.Headers), forwardBearerToken: config.ForwardBearerToken}
+		configuredTarget := target{name: name, headers: cloneHeaders(config.Headers), forwardBearerToken: config.ForwardBearerToken, toolsCache: &toolListCache{}}
 		switch transport {
 		case "http", "streamable_http":
 			parsed, err := url.Parse(config.Upstream)
@@ -214,6 +216,9 @@ func (h *Handler) Close() {
 		if target.stdio != nil {
 			target.stdio.stop()
 		}
+		if target.toolsCache != nil {
+			target.toolsCache.invalidate()
+		}
 	}
 }
 
@@ -266,7 +271,16 @@ func (h *Handler) handleToolCall(w http.ResponseWriter, r *http.Request, rpcReq 
 		toolReq.Metadata = map[string]string{}
 	}
 	toolReq.Metadata["mcp.target"] = target.name
+	toolReq.Metadata["mcp.tool"] = toolName
+	legacyRequest := toolReq
+	toolReq.Tool.Name = toolName
+	toolReq.Action.Name = "call"
 	decision, evalErr := target.engine.Evaluate(r.Context(), toolReq)
+	// Preserve policies written for the adapter's namespace/inferred action,
+	// while making bare tool names and action: call apply to every invocation.
+	if evalErr == nil && decision.Allowed && (legacyRequest.Tool != toolReq.Tool || legacyRequest.Action != toolReq.Action) {
+		decision, evalErr = target.engine.Evaluate(r.Context(), legacyRequest)
+	}
 	if h.auditor != nil {
 		_ = h.auditor.Log(r.Context(), audit.NewEvent(toolReq, decision))
 	}
@@ -286,61 +300,59 @@ func (h *Handler) handleToolList(w http.ResponseWriter, r *http.Request, rpcReq 
 	tools := make([]map[string]any, 0)
 	for _, key := range h.targetOrder {
 		target := h.targets[key]
-		// Synthetic OpenAPI tools need no upstream tools/list round-trip.
-		for _, synthetic := range target.openAPITools {
+		hidden, visible := 0, 0
+		var evaluationTime time.Duration
+		addTool := func(tool map[string]any) {
+			name, ok := tool["name"].(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				return
+			}
 			listRequest := model.ToolRequest{
 				Agent:    requestIdentity(r),
-				Tool:     model.Tool{Name: synthetic.Name},
+				Tool:     model.Tool{Name: name},
 				Action:   model.Action{Name: "list"},
 				Session:  model.Session{ID: r.Header.Get("Mcp-Session-Id")},
-				Metadata: map[string]string{"mcp.target": target.name},
+				Metadata: map[string]string{"mcp.target": target.name, "mcp.tool": name},
 			}
 			decision, err := target.engine.Evaluate(r.Context(), listRequest)
+			evaluationTime += decision.EvaluationTime
 			if err != nil || !decision.Allowed {
-				continue
+				hidden++
+				return
 			}
+			tool["name"] = target.name + "__" + name
+			tools = append(tools, tool)
+			visible++
+		}
+		// Synthetic OpenAPI tools need no upstream discovery round-trip.
+		for _, synthetic := range target.openAPITools {
 			encoded, err := json.Marshal(synthetic)
 			if err != nil {
 				continue
 			}
-			var entry map[string]any
-			if err := json.Unmarshal(encoded, &entry); err != nil {
-				continue
+			var tool map[string]any
+			if err := json.Unmarshal(encoded, &tool); err == nil {
+				addTool(tool)
 			}
-			entry["name"] = key + "__" + synthetic.Name
-			tools = append(tools, entry)
 		}
-		listRequest := model.ToolRequest{
-			Agent:    requestIdentity(r),
-			Tool:     model.Tool{Name: target.name},
-			Action:   model.Action{Name: "list"},
-			Session:  model.Session{ID: r.Header.Get("Mcp-Session-Id")},
-			Metadata: map[string]string{"mcp.target": target.name},
+		upstreamTools, upstreamErr := h.upstreamToolList(r.Context(), target, body, r.Header)
+		for _, tool := range upstreamTools {
+			addTool(tool)
 		}
-		decision, err := target.engine.Evaluate(r.Context(), listRequest)
 		if h.auditor != nil {
-			_ = h.auditor.Log(r.Context(), audit.NewEvent(listRequest, decision))
-		}
-		if err != nil || !decision.Allowed {
-			continue
-		}
-		status, _, response, err := h.callTarget(r.Context(), target, body, r.Header)
-		if err != nil || status < 200 || status >= 300 {
-			continue
-		}
-		var result struct {
-			Result struct {
-				Tools []map[string]any `json:"tools"`
-			} `json:"result"`
-		}
-		if err := json.Unmarshal(response, &result); err != nil {
-			continue
-		}
-		for _, tool := range result.Result.Tools {
-			if name, ok := tool["name"].(string); ok {
-				tool["name"] = target.name + "__" + name
+			listRequest := model.ToolRequest{
+				Agent: requestIdentity(r), Tool: model.Tool{Name: target.name},
+				Action: model.Action{Name: "list"}, Session: model.Session{ID: r.Header.Get("Mcp-Session-Id")},
 			}
-			tools = append(tools, tool)
+			event := audit.NewEvent(listRequest, model.Decision{
+				ID: "decision_" + rand.Text(), Allowed: true, Rule: "mcp.list",
+				Reason: fmt.Sprintf("Listed %d tools; hid %d tools", visible, hidden), EvaluationTime: evaluationTime,
+			})
+			event.Metadata = map[string]any{"mcp.target": target.name, "hidden_tools": hidden}
+			if upstreamErr != nil {
+				event.Metadata["upstream_error"] = true
+			}
+			_ = h.auditor.Log(r.Context(), event)
 		}
 	}
 	writeJSON(w, http.StatusOK, mcp.Response{JSONRPC: "2.0", ID: rpcReq.ID, Result: map[string]any{"tools": tools}})

@@ -22,6 +22,9 @@ type Event struct {
 	Rule       string        `json:"rule"`
 	Reason     string        `json:"reason"`
 	Latency    time.Duration `json:"latency"`
+	// Metadata contains explicit, non-secret audit details; tool arguments are
+	// not copied here automatically.
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 type Logger interface {

@@ -1,0 +1,11 @@
+apiVersion: omniswitch.dev/v1
+kind: Policy
+metadata:
+  name: hide-destructive-tools
+  version: v1
+spec:
+  # Discovery rules use the upstream name without the target__ prefix.
+  # Hiding is not a call prohibition; add an action: call rule to deny calls.
+  cel: 'action.name == "list" && tool.name.matches("(?i).*(delete|drop|destroy|remove).*")'
+  effect: deny
+  reason: Destructive tools are hidden from discovery.
