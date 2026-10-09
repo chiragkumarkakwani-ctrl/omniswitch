@@ -129,7 +129,8 @@ export async function requests(ctx) {
     ? button(
         "Export CSV",
         async (event) => {
-          event.currentTarget.disabled = true;
+          const control = event.currentTarget;
+          control.disabled = true;
           try {
             await download(query("/api/logs/export", { ...params, format: "csv" }), {
               signal: ctx.signal,
@@ -137,7 +138,7 @@ export async function requests(ctx) {
           } catch (error) {
             actionError(errors, error);
           } finally {
-            event.currentTarget.disabled = false;
+            control.disabled = false;
           }
         },
         { icon: "download" },

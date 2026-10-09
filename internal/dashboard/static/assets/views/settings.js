@@ -110,7 +110,8 @@ async function rawEditor(ctx) {
     "Save configuration",
     async (event) => {
       if (validated !== signature()) return;
-      event.currentTarget.disabled = true;
+      const control = event.currentTarget;
+      control.disabled = true;
       try {
         const data = await post(
           "/api/config/raw",
@@ -129,7 +130,7 @@ async function rawEditor(ctx) {
         if (error.status !== 401 && error.name !== "AbortError")
           status.replaceChildren(errorBox(error));
       } finally {
-        event.currentTarget.disabled = validated !== signature();
+        control.disabled = validated !== signature();
       }
     },
     { class: "button primary", disabled: true },
@@ -137,7 +138,8 @@ async function rawEditor(ctx) {
   const validate = button(
     "Validate",
     async (event) => {
-      event.currentTarget.disabled = true;
+      const control = event.currentTarget;
+      control.disabled = true;
       status.replaceChildren();
       const revision = signature();
       try {
@@ -175,7 +177,7 @@ async function rawEditor(ctx) {
         if (error.status !== 401 && error.name !== "AbortError")
           status.replaceChildren(errorBox(error));
       } finally {
-        event.currentTarget.disabled = false;
+        control.disabled = false;
       }
     },
     { icon: "check" },

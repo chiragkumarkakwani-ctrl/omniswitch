@@ -319,7 +319,8 @@ export async function playground(ctx) {
     "Apply prompt",
     async (event) => {
       if (!selected) return;
-      event.currentTarget.disabled = true;
+      const control = event.currentTarget;
+      control.disabled = true;
       try {
         const data = await post(
           "/api/prompts/render",
@@ -336,7 +337,7 @@ export async function playground(ctx) {
         if (error.name !== "AbortError" && error.status !== 401)
           promptErrors.replaceChildren(errorBox(error));
       } finally {
-        event.currentTarget.disabled = false;
+        control.disabled = false;
       }
     },
     { disabled: !canSend },

@@ -300,8 +300,9 @@ export async function providers(ctx) {
     document.getElementById("poll-error")?.replaceChildren();
     if (live.isConnected) update(live, cards(data, ctx));
   });
+  if (ctx.signal.aborted) return root;
   const countdown = setInterval(() => {
-    if (document.hidden) return;
+    if (document.hidden || ctx.signal.aborted) return;
     root.querySelectorAll(".circuit-cooldown").forEach((node) => {
       const remaining = Math.max(
         0,
