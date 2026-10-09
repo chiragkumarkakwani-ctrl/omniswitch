@@ -25,6 +25,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
+	"github.com/omniswitch-dev/omniswitch/internal/telemetry"
 )
 
 // Handler serves the OpenAI-compatible /v1/chat/completions API.
@@ -32,6 +33,7 @@ type Handler struct {
 	registry              *provider.Registry
 	router                *router.Router
 	store                 *store.Store
+	metrics               *telemetry.Metrics
 	guardrails            atomic.Pointer[guardrail.Engine]
 	cacheThreshold        float64
 	cacheTTL              time.Duration
@@ -56,6 +58,7 @@ func New(registry *provider.Registry, rtr *router.Router, st *store.Store, gr *g
 		registry:       registry,
 		router:         rtr,
 		store:          st,
+		metrics:        telemetry.DefaultMetrics,
 		cacheThreshold: 0.95,
 		cacheTTL:       24 * time.Hour,
 		cacheScope:     "api_key",
@@ -127,12 +130,20 @@ func (h *Handler) SetAlerts(config AlertConfig) {
 	h.alerts = NewAlertManager(config)
 }
 
+// SetMetrics replaces the process-wide registry for this handler. Call it
+// before serving requests. A nil registry disables collection on this handler.
+func (h *Handler) SetMetrics(metrics *telemetry.Metrics) {
+	h.metrics = metrics
+}
+
 func (h *Handler) SetLogBroadcaster(broadcast func(store.RequestLog)) {
 	h.logBroadcaster = broadcast
 }
 
 // ChatCompletions handles POST /v1/chat/completions.
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
+	w, r, finishMetrics := h.beginRequestMetrics(w, r)
+	defer finishMetrics()
 	ctx, span := otel.Tracer("omniswitch/gateway").Start(
 		r.Context(),
 		"chat unknown",
@@ -160,6 +171,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	setRequestMetricModel(ctx, req.Model)
 	span.SetName("chat " + firstNonEmpty(req.Model, "unknown"))
 	span.SetAttributes(attribute.String("gen_ai.request.model", req.Model))
 	activeRouter := h.router
@@ -184,6 +196,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	req = transformed
 	setChatRequestSpan(span, req)
+	setRequestMetricModel(ctx, req.Model)
 
 	reqID := newRequestID()
 	traceID := requestHeaderOrNew(r, "x-omniswitch-trace-id", "trace")
@@ -294,6 +307,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if cacheHit {
 		meta := provider.ProviderMeta{Provider: "semantic-cache", Model: req.Model, Cached: true, Timestamp: time.Now().UTC()}
 		setChatResponseSpan(span, cachedResp, meta)
+		setRequestMetricResult(ctx, meta.Provider, cachedResp.Model)
 		span.SetAttributes(attribute.Bool("omniswitch.cache_hit", true))
 		disp := h.outputGuardrailDisposition(ctx, reqID, &cachedResp)
 		if disp.Denied {
@@ -365,6 +379,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		recordTraceSpan(ctx, "provider_call", meta.Provider, "ok", stageStart, nil)
 		setChatResponseSpan(span, resp, meta)
+		recordProviderUsage(ctx, resp.Model, resp.Usage, meta)
 
 		// Output guardrails inspect every completion choice.
 		disp := h.outputGuardrailDisposition(ctx, reqID, &resp)
@@ -481,6 +496,7 @@ type logContext struct {
 }
 
 func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
+	recordLogMetrics(ctx, logCtx)
 	if h.store == nil {
 		return
 	}
@@ -662,6 +678,7 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 		}
 
 		setChatResponseSpan(span, aggregated, meta)
+		recordProviderUsage(ctx, aggregated.Model, aggregated.Usage, meta)
 		setStreamFinishReasons(span, finishReasons)
 		if bufferOutput {
 			disp := h.outputGuardrailDisposition(ctx, streamCtx.ID, &aggregated)
@@ -804,11 +821,12 @@ func (h *Handler) outputGuardrailDisposition(ctx context.Context, requestID stri
 // recordGuardrailResults keeps a structured audit trail for both enforced and
 // non-blocking results without persisting the prompt or completion itself.
 func (h *Handler) recordGuardrailResults(ctx context.Context, requestID string, results []guardrail.Result) {
-	if h.store == nil || requestID == "" {
-		return
-	}
 	for _, result := range results {
 		if !result.Triggered {
+			continue
+		}
+		h.metrics.RecordGuardrailEvent(result.Type, result.Action)
+		if h.store == nil || requestID == "" {
 			continue
 		}
 		if err := h.store.InsertGuardrailEvent(ctx, store.GuardrailEvent{

@@ -139,21 +139,101 @@ export OMNISWITCH_OTEL_INSECURE=true
 
 ## Prometheus (metrics)
 
-Enable `/metrics` on the gateway port:
+`GET /metrics` exposes Prometheus text format 0.0.4 from a concurrency-safe
+in-process registry. No metrics are reconstructed from SQLite/Postgres request
+logs: counters start at zero after a process restart and never roll off a
+24-hour window. Use `rate()` or `increase()` and aggregate across instances for
+traffic and spend over a time range. Retention, log deletion, and log-write
+failures do not change these counters.
 
-```bash
-export OMNISWITCH_PROMETHEUS_ENABLED=true
-curl -s localhost:8080/metrics | head
-```
-
-Scrape config:
+The endpoint is enabled by default (`OMNISWITCH_PROMETHEUS_ENABLED=true`, or
+`observability.prometheus_enabled: true`). It sits behind the gateway's normal
+authentication, authorization, and rate limiting. When gateway authentication
+is enabled, the scrape token needs a viewer role or higher:
 
 ```yaml
 scrape_configs:
   - job_name: omniswitch
     static_configs:
-      - targets: ["omniswitch.internal:8080"]
+      - targets: ["omniswitch:8080"]
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/omniswitch_metrics_token
 ```
+
+On a trusted monitoring network, `OMNISWITCH_METRICS_PUBLIC=true` (or
+`observability.prometheus.public: true`) mounts **only `/metrics`** outside the
+middleware chain. The default is `false`. Other API paths still require their
+normal credentials. `OMNISWITCH_PROMETHEUS_ENABLED=false` disables the endpoint
+even when public access is configured. The read-only config summary exposes
+`metrics.public`, which is true only when public scraping is active.
+
+### Metric reference
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `omniswitch_requests_total` | Counter | `endpoint`, `provider`, `model`, `status` | Completed API requests, counted once even through Responses/Messages translation |
+| `omniswitch_request_duration_seconds` | Histogram | `endpoint`, `provider` | End-to-end duration, including streaming, middleware, guardrails, cache, provider calls, translation, and logging |
+| `omniswitch_tokens_total` | Counter | `provider`, `model`, `direction` | Reported upstream input/output tokens, excluding cache hits |
+| `omniswitch_cost_usd_total` | Counter | `provider`, `model` | Estimated upstream cost in USD, excluding cache hits |
+| `omniswitch_guardrail_events_total` | Counter | `type`, `action` | Triggered input/output guardrail results, including non-blocking actions and local moderation checks |
+| `omniswitch_rate_limit_rejections_total` | Counter | `policy` | Rejections recorded by the rate/spend limiter integration hook |
+| `omniswitch_provider_circuit_state` | Gauge | `provider` | Scrape-time state: `0` closed, `1` half-open, `2` open |
+| `omniswitch_build_info` | Gauge | `version`, `commit` | One sample of value `1` for this binary's build |
+
+- `endpoint` comes from the original request path: `chat_completions`,
+  `responses`, `messages`, `embeddings`, `moderations`, or `rerank`. Images,
+  audio, MCP, A2A, admin APIs, health probes, and scrapes are not included.
+- `status` is `success` (2xx/3xx), `denied` (402/403), `limited` (429), or
+  `error` (other statuses). Auth and rate-limit middleware failures are counted
+  by the binary's outer metrics middleware. Embedders using endpoint handlers
+  alone count only requests that reach those handlers; use `MetricsMiddleware`
+  outside your auth chain to include middleware failures.
+- `provider` is the configured provider/account name. Cache hits use
+  `semantic-cache`; local moderations use `omniswitch`. An empty provider/model
+  means the request ended before those values were resolved. Model labels use
+  the returned model when known, otherwise the resolved/requested model.
+- `direction` is `input` or `output`. Usage and cost count each successful
+  upstream completion, including ones later denied or retried by output
+  guardrails. One logical request is still counted once. Cache hits do not
+  increment upstream tokens or cost, and local moderation has no upstream
+  usage. Streaming token totals come from reported provider usage, not text
+  length estimates. Cost uses the gateway's current pricing estimator.
+- `type` and `action` are the triggered guardrail result's type and configured
+  action. Metrics do not depend on audit persistence. Multiple choices or
+  moderation inputs can trigger multiple events.
+- `policy` is the rejecting limiter policy name. Limiters must call
+  `telemetry.DefaultMetrics.RecordRateLimitRejection(policy)` once per rejection.
+- Circuits must register a concurrency-safe owned snapshot with
+  `telemetry.DefaultMetrics.RegisterCircuitStateSource(func() map[string]int)`.
+  The hook runs on every scrape, outside the registry lock, and omits invalid
+  states. Removed providers do not leave stale gauge samples.
+
+The duration histogram has cumulative inclusive bounds (seconds): `0.005`,
+`0.01`, `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, `5`, `10`, `30`,
+`60`, `120`, and `+Inf`. Exposition includes
+`omniswitch_request_duration_seconds_bucket` (additional `le` label), `_sum`,
+and `_count`. Unobserved families expose HELP/TYPE lines but no label samples;
+rate-limit and circuit samples require their integration hooks. Labels are
+escaped and output is deterministically ordered. Avoid unconstrained model or
+provider names if metric cardinality is a concern; request IDs and API keys are
+never metric labels.
+
+### v0.2.0 metrics migration
+
+The old `/metrics` rolling 24-hour SQL sums were not true counters. The new
+`omniswitch_requests_total`, `omniswitch_tokens_total`, and
+`omniswitch_cost_usd_total` have the labels above and process-lifetime semantics.
+Update dashboards/alerts to use rates or increases and appropriate label sums.
+The former `omniswitch_requests_allowed_total`,
+`omniswitch_requests_denied_total`, and `omniswitch_requests_errors_total` are
+replaced by `omniswitch_requests_total` with the corresponding `success`,
+`denied`, and `error` status labels. The old
+`omniswitch_request_latency_ms_average` is replaced by the seconds histogram;
+compute an average with `rate(..._sum[5m]) / rate(..._count[5m])` or a quantile
+with `histogram_quantile()`. `omniswitch_cache_hits_total` is replaced by
+request counts with `provider="semantic-cache"`. SQL-based `/api/metrics`
+continues to serve its existing dashboard contract separately.
 
 ## Built-in trace waterfall
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
+	"github.com/omniswitch-dev/omniswitch/internal/telemetry"
 )
 
 //go:embed static
@@ -24,12 +25,22 @@ var staticFiles embed.FS
 // Handler serves the dashboard API and embedded web UI.
 type Handler struct {
 	store      *store.Store
+	metrics    *telemetry.Metrics
 	configPath string
 }
 
 // New creates a new dashboard handler.
 func New(st *store.Store) *Handler {
-	return &Handler{store: st}
+	return &Handler{store: st, metrics: telemetry.DefaultMetrics}
+}
+
+// SetMetrics selects the registry exposed by /metrics. Call it before
+// serving requests. A nil value restores the process-wide default registry.
+func (h *Handler) SetMetrics(metrics *telemetry.Metrics) {
+	if metrics == nil {
+		metrics = telemetry.DefaultMetrics
+	}
+	h.metrics = metrics
 }
 
 func (h *Handler) SetConfigPath(path string) {
@@ -414,23 +425,7 @@ func newID(prefix string) string {
 }
 
 func (h *Handler) prometheus(w http.ResponseWriter, r *http.Request) {
-	metrics, err := h.store.GetMetrics(r.Context(), time.Now().UTC().Add(-24*time.Hour))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	fprintf := func(format string, values ...any) { _, _ = fmt.Fprintf(w, format, values...) }
-	fprintf("# HELP omniswitch_requests_total Gateway requests over the last 24 hours.\n")
-	fprintf("# TYPE omniswitch_requests_total counter\n")
-	fprintf("omniswitch_requests_total %d\n", metrics.TotalRequests)
-	fprintf("omniswitch_requests_allowed_total %d\n", metrics.AllowedCount)
-	fprintf("omniswitch_requests_denied_total %d\n", metrics.DeniedCount)
-	fprintf("omniswitch_requests_errors_total %d\n", metrics.ErrorCount)
-	fprintf("omniswitch_cache_hits_total %d\n", metrics.CacheHits)
-	fprintf("omniswitch_tokens_total %d\n", metrics.TotalTokens)
-	fprintf("omniswitch_cost_usd_total %.6f\n", metrics.TotalCost)
-	fprintf("omniswitch_request_latency_ms_average %.3f\n", metrics.AvgLatencyMs)
+	h.metrics.ServeHTTP(w, r)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

@@ -12,6 +12,8 @@ import (
 // Embeddings serves OpenAI-compatible /v1/embeddings for native OpenAI and
 // OpenAI-compatible custom providers.
 func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
+	w, r, finishMetrics := h.beginRequestMetrics(w, r)
+	defer finishMetrics()
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return
@@ -22,6 +24,7 @@ func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	setRequestMetricModel(r.Context(), request.Model)
 	if strings.TrimSpace(request.Model) == "" || request.Input == nil {
 		writeError(w, http.StatusBadRequest, "model and input are required")
 		return
@@ -56,6 +59,7 @@ func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "embedding provider error: "+err.Error())
 		return
 	}
+	recordProviderUsage(r.Context(), response.Model, response.Usage, meta)
 	logResponse := provider.ChatResponse{ID: requestID, Object: "embedding", Created: time.Now().Unix(), Model: response.Model, Usage: response.Usage}
 	h.logRequest(r.Context(), logContext{ID: requestID, TraceID: traceID, SessionID: sessionID, Request: logRequest, Response: &logResponse, Meta: &meta, APIKeyID: keyID, Status: "success"})
 	w.Header().Set("x-omniswitch-trace-id", traceID)
