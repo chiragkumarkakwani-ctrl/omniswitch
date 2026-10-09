@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 // Embeddings serves OpenAI-compatible /v1/embeddings for native OpenAI and
 // OpenAI-compatible custom providers.
 func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
+	r = r.WithContext(store.WithRequestEndpoint(r.Context(), r.URL.Path))
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return

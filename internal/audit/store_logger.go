@@ -38,6 +38,7 @@ func (l *StoreLogger) Log(ctx context.Context, event Event) error {
 	if l == nil || l.store == nil {
 		return nil
 	}
+	ctx = store.WithRequestEndpoint(ctx, "/mcp")
 	status := "success"
 	if event.Decision == "DENY" {
 		status = "denied"
@@ -45,6 +46,7 @@ func (l *StoreLogger) Log(ctx context.Context, event Event) error {
 	return l.store.InsertLog(ctx, store.RequestLog{
 		ID:             event.DecisionID,
 		Timestamp:      event.Timestamp,
+		Endpoint:       store.RequestEndpoint(ctx),
 		Provider:       "mcp",
 		Model:          event.Tool,
 		Status:         status,

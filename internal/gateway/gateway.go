@@ -134,7 +134,7 @@ func (h *Handler) SetLogBroadcaster(broadcast func(store.RequestLog)) {
 // ChatCompletions handles POST /v1/chat/completions.
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	ctx, span := otel.Tracer("sentinel/gateway").Start(
-		r.Context(),
+		store.WithRequestEndpoint(r.Context(), r.URL.Path),
 		"POST /v1/chat/completions",
 		oteltrace.WithSpanKind(oteltrace.SpanKindServer),
 		oteltrace.WithAttributes(
@@ -484,15 +484,17 @@ func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
 	}
 
 	entry := store.RequestLog{
-		ID:        logCtx.ID,
-		Timestamp: time.Now().UTC(),
-		TraceID:   logCtx.TraceID,
-		SessionID: logCtx.SessionID,
-		Model:     logCtx.Request.Model,
-		APIKeyID:  logCtx.APIKeyID,
-		Status:    logCtx.Status,
-		Decision:  "ALLOW",
-		Cached:    logCtx.Cached,
+		ID:         logCtx.ID,
+		Timestamp:  time.Now().UTC(),
+		TraceID:    logCtx.TraceID,
+		SessionID:  logCtx.SessionID,
+		Endpoint:   store.RequestEndpoint(ctx),
+		CostSource: "none",
+		Model:      logCtx.Request.Model,
+		APIKeyID:   logCtx.APIKeyID,
+		Status:     logCtx.Status,
+		Decision:   "ALLOW",
+		Cached:     logCtx.Cached,
 	}
 	if h.logPayloads {
 		entry.RequestBody = marshalLogBody(logCtx.Request)
