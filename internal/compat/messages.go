@@ -300,6 +300,9 @@ func MessagesFromChat(chat provider.ChatResponse) (MessageResponse, error) {
 			if err != nil {
 				return MessageResponse{}, err
 			}
+			if call.ID == "" || call.Function.Name == "" {
+				return MessageResponse{}, fmt.Errorf("upstream returned incomplete tool call")
+			}
 			response.Content = append(response.Content, MessageBlock{Type: "tool_use", ID: call.ID, Name: call.Function.Name, Input: input})
 		}
 	}

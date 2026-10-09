@@ -123,3 +123,42 @@ func TestMessagesErrors(t *testing.T) {
 	}
 	assertJSON(t, MessagePing(), json.RawMessage(`{"event":"ping","data":{"type":"ping"}}`))
 }
+
+func TestMessagesToolInputRetainsLargeJSONNumbers(t *testing.T) {
+	arguments := `{"id":9007199254740993,"amount":1.234567890123456789,"large":1e400}`
+	chat := provider.ChatResponse{Choices: []provider.Choice{{Message: provider.Message{ToolCalls: []provider.ToolCall{{ID: "c", Function: provider.FunctionCall{Name: "f", Arguments: arguments}}}}}}}
+	response, err := MessagesFromChat(chat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := response.Content[0].Input
+	if input["id"].(json.Number).String() != "9007199254740993" || input["amount"].(json.Number).String() != "1.234567890123456789" || input["large"].(json.Number).String() != "1e400" {
+		t.Fatalf("rounded tool input: %v", input)
+	}
+	data, err := json.Marshal(response)
+	if err != nil || len(data) == 0 {
+		t.Fatalf("number encoding = %s %v", data, err)
+	}
+	request := MessagesRequest{Model: "m", MaxTokens: newInt(64), Messages: []InputMessage{{Role: "assistant", Content: json.RawMessage(`[{"type":"tool_use","id":"c","name":"f","input":` + arguments + `}]`)}}}
+	converted, err := MessagesToChat(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := validToolInput(converted.Messages[0].ToolCalls[0].Function.Arguments)
+	if err != nil || again["id"] != input["id"] || again["amount"] != input["amount"] || again["large"] != input["large"] {
+		t.Fatalf("input history changed: %v %v", again, err)
+	}
+}
+
+func newInt(value int) *int { return &value }
+
+func TestMessagesRejectsTrailingArgumentsAndIncompleteToolMetadata(t *testing.T) {
+	if _, err := validToolInput(`{} {}`); err == nil {
+		t.Fatal("multiple JSON objects are not one input")
+	}
+	for _, call := range []provider.ToolCall{{Function: provider.FunctionCall{Name: "f", Arguments: "{}"}}, {ID: "c", Function: provider.FunctionCall{Arguments: "{}"}}} {
+		if _, err := MessagesFromChat(provider.ChatResponse{Choices: []provider.Choice{{Message: provider.Message{ToolCalls: []provider.ToolCall{call}}}}}); err == nil || err.Error() != "upstream returned incomplete tool call" {
+			t.Fatalf("error = %v", err)
+		}
+	}
+}

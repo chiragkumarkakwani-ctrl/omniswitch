@@ -5,6 +5,7 @@ package compat
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
@@ -52,6 +53,7 @@ func prefixedID(prefix, id string) string {
 }
 
 func rawString(raw json.RawMessage) (string, bool) {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
 	var text string
 	if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &text) != nil {
 		return "", false
@@ -81,7 +83,15 @@ func functionChoice(name string) any {
 
 func validToolInput(arguments string) (map[string]any, error) {
 	var input map[string]any
-	if err := json.Unmarshal([]byte(arguments), &input); err != nil || input == nil {
+	decoder := json.NewDecoder(strings.NewReader(arguments))
+	// Tool IDs and amounts may exceed float64 precision. Retain the original
+	// JSON number rather than silently rounding an otherwise valid input.
+	decoder.UseNumber()
+	if err := decoder.Decode(&input); err != nil || input == nil {
+		return nil, fmt.Errorf("upstream returned malformed tool arguments")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
 		return nil, fmt.Errorf("upstream returned malformed tool arguments")
 	}
 	return input, nil
