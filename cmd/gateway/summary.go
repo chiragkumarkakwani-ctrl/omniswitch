@@ -73,6 +73,9 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 			"llm_judges":      guardrailLLMJudgeSummaries(settings.guardrailConfig.LLMJudges),
 			"moderation_api":  true,
 		},
+		"metrics": map[string]any{
+			"public": settings.prometheusEnabled && settings.metricsPublic,
+		},
 		"providers": map[string]any{
 			"names":       providerNames,
 			"model_count": modelCount,

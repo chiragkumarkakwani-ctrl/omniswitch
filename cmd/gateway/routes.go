@@ -269,10 +269,14 @@ func wrapGatewayMiddleware(settings runtimeSettings, st *store.Store, mux http.H
 
 // newTopMux serves /healthz and /readyz ahead of the auth, authorization,
 // and rate-limit chain so liveness and readiness probes never need
-// credentials and are never rate limited. Every other path goes to handler.
-func newTopMux(health *healthState, handler http.Handler) *http.ServeMux {
+// credentials and are never rate limited. Metrics bypass the chain only when
+// explicitly public and enabled. Every other path goes to handler.
+func newTopMux(health *healthState, handler http.Handler, settings runtimeSettings, dash *dashboard.Handler) *http.ServeMux {
 	topMux := http.NewServeMux()
 	health.registerHealthRoutes(topMux)
+	if settings.prometheusEnabled && settings.metricsPublic {
+		dash.RegisterPrometheus(topMux)
+	}
 	topMux.Handle("/", handler)
 	return topMux
 }

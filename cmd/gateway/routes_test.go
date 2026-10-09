@@ -17,6 +17,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/prompt"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/telemetry"
 	"github.com/omniswitch-dev/omniswitch/internal/vault"
 )
 
@@ -24,7 +25,7 @@ const routeTestKey = "sk-osw-route-test-secret"
 
 // newRouteTestServer wires the same mux, middleware chain, and top-level
 // mux that runServe builds, with authentication on and MCP off.
-func newRouteTestServer(t *testing.T) http.Handler {
+func newRouteTestServer(t *testing.T, overrides ...func(*runtimeSettings)) http.Handler {
 	t.Helper()
 	st := newTestStore(t)
 	settings := runtimeSettings{
@@ -33,12 +34,19 @@ func newRouteTestServer(t *testing.T) http.Handler {
 		rateLimitRequests: 1000,
 		rateLimitWindow:   time.Minute,
 	}
+	for _, override := range overrides {
+		override(&settings)
+	}
 	if err := ensureBootstrapKey(context.Background(), st, settings); err != nil {
 		t.Fatalf("ensureBootstrapKey() error = %v", err)
 	}
 	registry := provider.NewRegistry()
 	registry.Register(fakeHealthProvider{name: "fake"})
+	metrics := telemetry.NewMetrics()
 	gw := gateway.New(registry, router.New(registry), st, guardrail.NewEngine())
+	gw.SetMetrics(metrics)
+	dash := dashboard.New(st)
+	dash.SetMetrics(metrics)
 	mux := newGatewayMux(routeHandlers{
 		settings: settings,
 		registry: registry,
@@ -49,14 +57,14 @@ func newRouteTestServer(t *testing.T) http.Handler {
 		org:      org.New(st),
 		eval:     eval.NewHandler(st),
 		vault:    vault.NewHandler(vault.New(st, "")),
-		dash:     dashboard.New(st),
+		dash:     dash,
 	})
 	handler, closeRateLimiter, err := wrapGatewayMiddleware(settings, st, mux)
 	if err != nil {
 		t.Fatalf("wrapGatewayMiddleware() error = %v", err)
 	}
 	t.Cleanup(closeRateLimiter)
-	return newTopMux(newHealthState(st, registry, false), handler)
+	return newTopMux(newHealthState(st, registry, false), gw.MetricsMiddleware(handler), settings, dash)
 }
 
 func serveRoute(h http.Handler, method, path string, authenticated bool) *httptest.ResponseRecorder {
