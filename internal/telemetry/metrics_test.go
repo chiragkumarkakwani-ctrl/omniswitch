@@ -2,9 +2,11 @@ package telemetry
 
 import (
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +34,7 @@ func TestMetricsExposition(t *testing.T) {
 
 	text := scrapeMetrics(t, m)
 	for _, want := range []string{
-		"# HELP omniswitch_requests_total Completed gateway API requests since process start.\n",
+		"# HELP omniswitch_requests_total Completed gateway API requests since process start. At most 2000 label sets; overflow uses other for every family label value.\n",
 		"# TYPE omniswitch_requests_total counter\n",
 		`omniswitch_requests_total{endpoint="chat_completions",provider="openai",model="gpt-test",status="success"} 2`,
 		"# TYPE omniswitch_request_duration_seconds histogram\n",
@@ -176,6 +178,188 @@ func TestMetricsConcurrentUpdatesAndScrapes(t *testing.T) {
 			t.Errorf("concurrent updates lost samples; want %s", want)
 		}
 	}
+}
+
+func assertMetricsSeriesCapTotals(t *testing.T, m *Metrics, observations int) {
+	t.Helper()
+	for name, want := range map[string]float64{
+		requestsMetric:   float64(observations),
+		durationMetric:   float64(observations),
+		tokensMetric:     float64(observations * 5),
+		costMetric:       float64(observations) * 0.25,
+		guardrailsMetric: float64(observations),
+		rateLimitsMetric: float64(observations),
+	} {
+		family := m.families[name]
+		if got := len(family.series); got != maxMetricSeriesPerFamily {
+			t.Errorf("%s retained %d label sets, want %d including overflow", name, got, maxMetricSeriesPerFamily)
+		}
+		var total float64
+		for _, sample := range family.series {
+			if family.kind != "histogram" {
+				total += sample.value
+				continue
+			}
+			total += float64(sample.count)
+			if sample.sum != float64(sample.count) {
+				t.Errorf("histogram lost duration sum: %v for %d one-second observations", sample.sum, sample.count)
+			}
+			for index, bound := range durationBuckets {
+				var wantBucket uint64
+				if bound >= 1 {
+					wantBucket = sample.count
+				}
+				if sample.buckets[index] != wantBucket {
+					t.Errorf("histogram lost bucket observations at %v", bound)
+				}
+			}
+		}
+		if total != want {
+			t.Errorf("%s total = %v, want %v; capped labels must not lose updates", name, total, want)
+		}
+	}
+	for name, family := range m.families {
+		if len(family.series) > maxMetricSeriesPerFamily {
+			t.Errorf("%s exceeded the hard series cap", name)
+		}
+	}
+}
+
+func recordDistinctMetricLabels(m *Metrics, index int) {
+	suffix := strconv.Itoa(index)
+	m.RecordRequest("endpoint-"+suffix, "provider-"+suffix, "model-"+suffix, "error", time.Second)
+	m.RecordUsage("provider-"+suffix, "model-"+suffix, 2, 3, 0.25)
+	m.RecordGuardrailEvent("guardrail-"+suffix, "action-"+suffix)
+	m.RecordRateLimitRejection("policy-" + suffix)
+}
+
+func TestMetricsSeriesCap(t *testing.T) {
+	m := NewMetrics()
+	const observations = maxMetricSeriesPerFamily + 7
+	for index := 0; index < observations; index++ {
+		recordDistinctMetricLabels(m, index)
+	}
+	assertMetricsSeriesCapTotals(t, m, observations)
+	const retained = maxMetricSeriesPerFamily - 1
+	const overflow = observations - retained
+	text := scrapeMetrics(t, m)
+	for _, want := range []string{
+		`omniswitch_requests_total{endpoint="other",provider="other",model="other",status="other"} ` + strconv.Itoa(overflow),
+		`omniswitch_request_duration_seconds_count{endpoint="other",provider="other"} ` + strconv.Itoa(overflow),
+		`omniswitch_request_duration_seconds_bucket{endpoint="other",provider="other",le="+Inf"} ` + strconv.Itoa(overflow),
+		`omniswitch_tokens_total{provider="other",model="other",direction="other"} ` + strconv.Itoa(observations*5-(retained/2*5+retained%2*2)),
+		`omniswitch_cost_usd_total{provider="other",model="other"} ` + formatFloat(float64(overflow)*0.25),
+		`omniswitch_guardrail_events_total{type="other",action="other"} ` + strconv.Itoa(overflow),
+		`omniswitch_rate_limit_rejections_total{policy="other"} ` + strconv.Itoa(overflow),
+		`omniswitch_metrics_series_overflow_total{family="omniswitch_requests_total"} ` + strconv.Itoa(overflow),
+		`omniswitch_metrics_series_overflow_total{family="omniswitch_request_duration_seconds"} ` + strconv.Itoa(overflow),
+		`omniswitch_metrics_series_overflow_total{family="omniswitch_tokens_total"} ` + strconv.Itoa(observations*2-retained),
+		`omniswitch_metrics_series_overflow_total{family="omniswitch_cost_usd_total"} ` + strconv.Itoa(overflow),
+		`omniswitch_metrics_series_overflow_total{family="omniswitch_guardrail_events_total"} ` + strconv.Itoa(overflow),
+		`omniswitch_metrics_series_overflow_total{family="omniswitch_rate_limit_rejections_total"} ` + strconv.Itoa(overflow),
+	} {
+		if !strings.Contains(text, want+"\n") {
+			t.Errorf("missing overflow sample %s", want)
+		}
+	}
+	// Existing labels stay individually accounted for after the cap, while
+	// repeated updates to an unretained label set continue to overflow.
+	recordDistinctMetricLabels(m, 0)
+	recordDistinctMetricLabels(m, observations-1)
+	assertMetricsSeriesCapTotals(t, m, observations+2)
+	family := m.families[requestsMetric]
+	if got := family.series[formatLabels(family.labels, []string{"endpoint-0", "provider-0", "model-0", "error"})].value; got != 2 {
+		t.Errorf("existing series value = %v, want 2", got)
+	}
+	if got := family.series[family.overflowKey].value; got != overflow+1 {
+		t.Errorf("overflow value = %v, want %d", got, overflow+1)
+	}
+}
+
+func TestMetricsOverflowLabelReservation(t *testing.T) {
+	for _, otherFirst := range []bool{false, true} {
+		t.Run(strconv.FormatBool(otherFirst), func(t *testing.T) {
+			m := NewMetrics()
+			if otherFirst {
+				m.RecordGuardrailEvent(otherMetricLabel, otherMetricLabel)
+			}
+			for index := 0; index < maxMetricSeriesPerFamily-1; index++ {
+				m.RecordGuardrailEvent(strconv.Itoa(index), "deny")
+			}
+			if !otherFirst {
+				m.RecordGuardrailEvent(otherMetricLabel, otherMetricLabel)
+			}
+			m.RecordGuardrailEvent("overflow", "deny")
+			m.RecordGuardrailEvent("overflow", "deny")
+			family := m.families[guardrailsMetric]
+			if len(family.series) != maxMetricSeriesPerFamily || family.series[family.overflowKey].value != 3 {
+				t.Fatal("reserved overflow slot exceeded the cap or lost updates")
+			}
+			if family.series[formatLabels(family.labels, []string{strconv.Itoa(maxMetricSeriesPerFamily - 2), "deny"})] == nil {
+				t.Fatal("existing other labels consumed an extra reserved slot")
+			}
+			if !strings.Contains(scrapeMetrics(t, m), `omniswitch_metrics_series_overflow_total{family="omniswitch_guardrail_events_total"} 2`+"\n") {
+				t.Fatal("overflow events must count each folded update, not literal other labels")
+			}
+		})
+	}
+}
+
+func TestMetricsCircuitSeriesCap(t *testing.T) {
+	m := NewMetrics()
+	states := map[string]int{otherMetricLabel: 0}
+	const providers = maxMetricSeriesPerFamily + 7
+	for index := 0; index < providers; index++ {
+		name := "a-provider-" + strconv.Itoa(10000+index)
+		states[name] = 0
+		if index >= maxMetricSeriesPerFamily-1 {
+			states[name] = 2
+		}
+	}
+	m.RegisterCircuitStateSource(func() map[string]int { return states })
+	for scrape := 1; scrape <= 2; scrape++ {
+		text := scrapeMetrics(t, m)
+		if got := strings.Count(text, circuitMetric+"{"); got != maxMetricSeriesPerFamily {
+			t.Fatalf("circuit scrape has %d label sets, want %d", got, maxMetricSeriesPerFamily)
+		}
+		if !strings.Contains(text, `omniswitch_provider_circuit_state{provider="other"} 2`+"\n") {
+			t.Fatal("circuit overflow must retain the highest state, even with a literal other provider")
+		}
+		if !strings.Contains(text, `omniswitch_provider_circuit_state{provider="a-provider-10000"} 0`+"\n") || strings.Contains(text, `provider="a-provider-12006"`) {
+			t.Fatal("circuit cap must choose retained labels deterministically")
+		}
+		want := `omniswitch_metrics_series_overflow_total{family="omniswitch_provider_circuit_state"} ` + strconv.Itoa(scrape*(providers-(maxMetricSeriesPerFamily-1)))
+		if !strings.Contains(text, want+"\n") {
+			t.Errorf("missing scrape-time overflow count %s", want)
+		}
+	}
+	states = map[string]int{"only": 1}
+	text := scrapeMetrics(t, m)
+	if strings.Contains(text, `omniswitch_provider_circuit_state{provider="other"}`) || strings.Count(text, circuitMetric+"{") != 1 {
+		t.Fatal("capped circuit snapshot retained stale providers or overflow state")
+	}
+}
+
+func TestMetricsConcurrentSeriesCap(t *testing.T) {
+	m := NewMetrics()
+	const workers, iterations = 8, 400
+	var pending sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		pending.Add(1)
+		go func() {
+			defer pending.Done()
+			for iteration := 0; iteration < iterations; iteration++ {
+				recordDistinctMetricLabels(m, worker*iterations+iteration)
+				if iteration%100 == 0 {
+					if err := m.WritePrometheus(io.Discard); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+		}()
+	}
+	pending.Wait()
+	assertMetricsSeriesCapTotals(t, m, workers*iterations)
 }
 
 func TestMetricsHTTPAndWriteError(t *testing.T) {

@@ -20,7 +20,13 @@ const (
 	rateLimitsMetric      = "omniswitch_rate_limit_rejections_total"
 	circuitMetric         = "omniswitch_provider_circuit_state"
 	buildMetric           = "omniswitch_build_info"
+	seriesOverflowMetric  = "omniswitch_metrics_series_overflow_total"
 	prometheusContentType = "text/plain; version=0.0.4; charset=utf-8"
+
+	// The cap includes one reserved overflow series, bounding retained labels
+	// even when callers supply a different model on every request.
+	maxMetricSeriesPerFamily = 2000
+	otherMetricLabel         = "other"
 )
 
 var durationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120}
@@ -39,11 +45,12 @@ type Metrics struct {
 }
 
 type metricFamily struct {
-	name   string
-	help   string
-	kind   string
-	labels []string
-	series map[string]*metricSeries
+	name        string
+	help        string
+	kind        string
+	labels      []string
+	overflowKey string
+	series      map[string]*metricSeries
 }
 
 type metricSeries struct {
@@ -64,10 +71,17 @@ func NewMetrics() *Metrics {
 		{name: costMetric, help: "Estimated upstream cost in USD since process start, excluding cache hits.", kind: "counter", labels: []string{"provider", "model"}},
 		{name: guardrailsMetric, help: "Triggered gateway guardrail events since process start.", kind: "counter", labels: []string{"type", "action"}},
 		{name: rateLimitsMetric, help: "Rate-limit rejections since process start.", kind: "counter", labels: []string{"policy"}},
-		{name: circuitMetric, help: "Provider circuit state: 0 closed, 1 half-open, 2 open.", kind: "gauge", labels: []string{"provider"}},
+		{name: circuitMetric, help: "Provider circuit state: 0 closed, 1 half-open, 2 open; overflow reports the highest state.", kind: "gauge", labels: []string{"provider"}},
 		{name: buildMetric, help: "Gateway build information.", kind: "gauge", labels: []string{"version", "commit"}},
+		{name: seriesOverflowMetric, help: "Metric observations folded into overflow series since process start.", kind: "counter", labels: []string{"family"}},
 	}
 	for _, definition := range definitions {
+		definition.help += " At most " + strconv.Itoa(maxMetricSeriesPerFamily) + " label sets; overflow uses other for every family label value."
+		other := make([]string, len(definition.labels))
+		for index := range other {
+			other[index] = otherMetricLabel
+		}
+		definition.overflowKey = formatLabels(definition.labels, other)
 		definition.series = make(map[string]*metricSeries)
 		m.families[definition.name] = &definition
 	}
@@ -167,9 +181,31 @@ func (m *Metrics) observe(name string, labels []string, value float64) {
 	}
 }
 
+// getSeries runs under the registry's exclusive lock. The overflow counter's
+// family labels are fixed registry names, never caller-supplied label values.
 func (m *Metrics) getSeries(name string, labels []string) *metricSeries {
-	family := m.families[name]
+	series, overflow := m.families[name].getSeries(labels)
+	if overflow && name != seriesOverflowMetric {
+		m.addCounter(seriesOverflowMetric, []string{name}, 1)
+	}
+	return series
+}
+
+func (family *metricFamily) getSeries(labels []string) (*metricSeries, bool) {
 	key := formatLabels(family.labels, labels)
+	if series := family.series[key]; series != nil {
+		return series, false
+	}
+	limit := maxMetricSeriesPerFamily
+	if family.series[family.overflowKey] == nil {
+		// Reserve the final slot: creating overflow must not exceed the cap.
+		limit--
+	}
+	overflow := false
+	if len(family.series) >= limit {
+		overflow = key != family.overflowKey
+		key = family.overflowKey
+	}
 	series := family.series[key]
 	if series == nil {
 		series = &metricSeries{}
@@ -178,7 +214,7 @@ func (m *Metrics) getSeries(name string, labels []string) *metricSeries {
 		}
 		family.series[key] = series
 	}
-	return series
+	return series, overflow
 }
 
 // WritePrometheus writes deterministic Prometheus text exposition format 0.0.4.
@@ -187,14 +223,28 @@ func (m *Metrics) getSeries(name string, labels []string) *metricSeries {
 func (m *Metrics) WritePrometheus(w io.Writer) error {
 	m.mu.RLock()
 	source := m.circuitStates
+	circuits := *m.families[circuitMetric]
 	m.mu.RUnlock()
-	circuits := map[string]*metricSeries{}
+	circuits.series = make(map[string]*metricSeries)
+	overflowEvents := 0
 	if source != nil {
-		for provider, state := range source() {
+		states := source()
+		// Select retained providers consistently between scrapes.
+		for _, provider := range sortedKeys(states) {
+			state := states[provider]
 			if state >= 0 && state <= 2 {
-				circuits[formatLabels([]string{"provider"}, []string{provider})] = &metricSeries{value: float64(state)}
+				series, overflow := circuits.getSeries([]string{provider})
+				series.value = math.Max(series.value, float64(state))
+				if overflow {
+					overflowEvents++
+				}
 			}
 		}
+	}
+	if overflowEvents > 0 {
+		m.mu.Lock()
+		m.addCounter(seriesOverflowMetric, []string{circuitMetric}, float64(overflowEvents))
+		m.mu.Unlock()
 	}
 
 	var text strings.Builder
@@ -205,7 +255,7 @@ func (m *Metrics) WritePrometheus(w io.Writer) error {
 		text.WriteString("# TYPE " + name + " " + family.kind + "\n")
 		series := family.series
 		if name == circuitMetric {
-			series = circuits
+			series = circuits.series
 		}
 		for _, labels := range sortedKeys(series) {
 			sample := series[labels]
