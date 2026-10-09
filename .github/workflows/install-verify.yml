@@ -73,11 +73,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up QEMU
         if: matrix.mode == 'qemu'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Verify (linux/arm64 via QEMU)
         if: matrix.mode == 'qemu'
@@ -140,7 +140,7 @@ jobs:
     steps:
       - name: Set up QEMU
         if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Pull image
         run: docker pull --platform "linux/${{ matrix.arch }}" "ghcr.io/omniswitch-dev/omniswitch:${{ needs.resolve.outputs.version }}"
@@ -173,13 +173,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: helm lint
         run: helm lint deploy/helm/omniswitch
 
       - name: Create kind cluster
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1
         with:
           wait: 120s
 
