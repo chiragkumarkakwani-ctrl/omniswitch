@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -696,5 +697,60 @@ func TestMessagesTopKCacheIsolationWithoutOpenAIPassthrough(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatalf("top_k cache entries not isolated: %d calls", calls.Load())
+	}
+}
+
+func TestMessagesSendsIdlePingThroughHTTPHandler(t *testing.T) {
+	if testing.Short() {
+		t.Skip("15-second idle keepalive acceptance")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
+	defer cancel()
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeCompatChunks(w, []json.RawMessage{json.RawMessage(`{"id":"chat_idle","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant"}}]}`)})
+		select {
+		case <-release:
+			writeCompatChunks(w, []json.RawMessage{json.RawMessage(`{"id":"chat_idle","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"done"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), json.RawMessage(`"[DONE]"`)})
+		case <-r.Context().Done():
+		}
+	}))
+	defer upstream.Close()
+	handler, _ := newCompatHandler(t, upstream.URL, guardrail.NewEngine())
+	handler.SetStreamGuardrailBuffer(false)
+	gateway := httptest.NewServer(MessagesCompatibilityMiddleware(http.HandlerFunc(handler.Messages)))
+	defer gateway.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gateway.URL+"/v1/messages", strings.NewReader(`{"model":"test-model","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := gateway.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 || response.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("stream response = %d %v", response.StatusCode, response.Header)
+	}
+	started := time.Now()
+	scanner := bufio.NewScanner(response.Body)
+	pingSeen, stopSeen := false, false
+	for scanner.Scan() {
+		if scanner.Text() == "event: ping" && !pingSeen {
+			pingSeen = true
+			if elapsed := time.Since(started); elapsed < 14*time.Second || elapsed > 20*time.Second {
+				t.Fatalf("idle ping after %s, expected about 15s", elapsed)
+			}
+			close(release)
+		}
+		if scanner.Text() == "event: message_stop" {
+			stopSeen = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !pingSeen || !stopSeen {
+		t.Fatalf("ping=%t stop=%t", pingSeen, stopSeen)
 	}
 }
