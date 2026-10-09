@@ -133,13 +133,14 @@ func (h *Handler) SetLogBroadcaster(broadcast func(store.RequestLog)) {
 
 // ChatCompletions handles POST /v1/chat/completions.
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
-	ctx, span := otel.Tracer("sentinel/gateway").Start(
+	ctx, span := otel.Tracer("omniswitch/gateway").Start(
 		r.Context(),
-		"POST /v1/chat/completions",
+		"chat unknown",
 		oteltrace.WithSpanKind(oteltrace.SpanKindServer),
 		oteltrace.WithAttributes(
 			attribute.String("http.request.method", r.Method),
-			attribute.String("http.route", "/v1/chat/completions"),
+			attribute.String("http.route", r.URL.Path),
+			attribute.String("gen_ai.operation.name", "chat"),
 		),
 	)
 	defer span.End()
@@ -159,6 +160,8 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	span.SetName("chat " + firstNonEmpty(req.Model, "unknown"))
+	span.SetAttributes(attribute.String("gen_ai.request.model", req.Model))
 	activeRouter := h.router
 	configRef := strings.TrimSpace(r.Header.Get("x-omniswitch-config"))
 	if configRef != "" {
@@ -170,7 +173,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		activeRouter = configRouter
-		span.SetAttributes(attribute.String("sentinel.config", configRef))
+		span.SetAttributes(attribute.String("omniswitch.config", configRef))
 	}
 	transformed, err := activeRouter.TransformRequest(req)
 	if err != nil {
@@ -180,6 +183,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req = transformed
+	setChatRequestSpan(span, req)
 
 	reqID := newRequestID()
 	traceID := requestHeaderOrNew(r, "x-omniswitch-trace-id", "trace")
@@ -198,20 +202,18 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	ctx = WithTags(ctx, tagsHeader(r.Header.Get("x-omniswitch-tags")))
 	ctx = WithTraceRecorder(ctx, traceRecorder)
 	span.SetAttributes(
-		attribute.String("sentinel.request_id", reqID),
-		attribute.String("sentinel.trace_id", traceID),
-		attribute.String("sentinel.session_id", sessionID),
-		attribute.String("sentinel.user_id", userID),
-		attribute.String("llm.request.model", req.Model),
-		attribute.Bool("llm.request.stream", req.Stream),
+		attribute.String("omniswitch.request_id", reqID),
+		attribute.String("omniswitch.trace_id", traceID),
+		attribute.String("omniswitch.session_id", sessionID),
+		attribute.String("omniswitch.user_id", userID),
 	)
 
 	stageStart := time.Now()
 	if denied, reason := h.budgetExceeded(ctx, apiKeyID); denied {
 		recordTraceSpan(ctx, "budget", "", "denied", stageStart, map[string]any{"reason": reason})
 		span.SetAttributes(
-			attribute.String("sentinel.decision", "DENY"),
-			attribute.String("sentinel.decision_reason", reason),
+			attribute.String("omniswitch.decision", "DENY"),
+			attribute.String("omniswitch.decision_reason", reason),
 		)
 		h.logRequest(ctx, logContext{
 			ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, APIKeyID: apiKeyID,
@@ -237,9 +239,9 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			if gr.Action == "deny" {
 				recordTraceSpan(ctx, "guardrail_input", "", "denied", stageStart, map[string]any{"type": gr.Type, "message": gr.Message})
 				span.SetAttributes(
-					attribute.String("sentinel.decision", "DENY"),
-					attribute.String("sentinel.guardrail.type", gr.Type),
-					attribute.String("sentinel.decision_reason", gr.Message),
+					attribute.String("omniswitch.decision", "DENY"),
+					attribute.String("omniswitch.guardrail.type", gr.Type),
+					attribute.String("omniswitch.decision_reason", gr.Message),
 				)
 				h.logRequest(ctx, logContext{
 					ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, APIKeyID: apiKeyID,
@@ -274,7 +276,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			recordTraceSpan(ctx, "guardrail_fallback", providerHint, "rerouted", stageStart,
 				map[string]any{"target": fallbackTarget})
 			span.SetAttributes(
-				attribute.String("sentinel.guardrail.fallback_target", fallbackTarget),
+				attribute.String("omniswitch.guardrail.fallback_target", fallbackTarget),
 			)
 		}
 		recordTraceSpan(ctx, "guardrail_input", "", "ok", stageStart, nil)
@@ -290,8 +292,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	cachedResp, cacheHit := h.cachedResponse(ctx, tenantCacheScope, cacheProvider, backendReq)
 	recordTraceSpan(ctx, "cache_lookup", cacheProvider, map[bool]string{true: "hit", false: "miss"}[cacheHit], stageStart, nil)
 	if cacheHit {
+		meta := provider.ProviderMeta{Provider: "semantic-cache", Model: req.Model, Cached: true, Timestamp: time.Now().UTC()}
+		setChatResponseSpan(span, cachedResp, meta)
+		span.SetAttributes(attribute.Bool("omniswitch.cache_hit", true))
 		disp := h.outputGuardrailDisposition(ctx, reqID, &cachedResp)
 		if disp.Denied {
+			span.SetAttributes(attribute.String("omniswitch.decision", "DENY"), attribute.String("omniswitch.decision_reason", disp.Reason))
 			h.logRequest(ctx, logContext{
 				ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Response: &cachedResp,
 				APIKeyID: apiKeyID, Status: "denied", ErrorMessage: disp.Reason, Cached: true,
@@ -303,10 +309,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		meta := provider.ProviderMeta{Provider: "semantic-cache", Model: req.Model, Cached: true, Timestamp: time.Now().UTC()}
+		span.SetStatus(codes.Ok, "")
 		span.SetAttributes(
-			attribute.String("sentinel.decision", "ALLOW"),
-			attribute.Bool("sentinel.cache_hit", true),
+			attribute.String("omniswitch.decision", "ALLOW"),
+			attribute.Bool("omniswitch.cache_hit", true),
 			attribute.String("llm.response.provider", meta.Provider),
 		)
 		h.logRequest(ctx, logContext{
@@ -343,7 +349,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			recordTraceSpan(ctx, "provider_call", meta.Provider, "error", stageStart, map[string]any{"error": err.Error()})
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "provider error")
-			span.SetAttributes(attribute.String("llm.response.provider", meta.Provider))
+			setChatProviderSpan(span, meta)
 			h.logRequest(ctx, logContext{
 				ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Meta: &meta,
 				APIKeyID: apiKeyID, Status: "error", ErrorMessage: err.Error(),
@@ -358,13 +364,14 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		recordTraceSpan(ctx, "provider_call", meta.Provider, "ok", stageStart, nil)
+		setChatResponseSpan(span, resp, meta)
 
 		// Output guardrails inspect every completion choice.
 		disp := h.outputGuardrailDisposition(ctx, reqID, &resp)
 		if disp.Denied {
 			span.SetAttributes(
-				attribute.String("sentinel.decision", "DENY"),
-				attribute.String("sentinel.decision_reason", disp.Reason),
+				attribute.String("omniswitch.decision", "DENY"),
+				attribute.String("omniswitch.decision_reason", disp.Reason),
 				attribute.String("llm.response.provider", meta.Provider),
 			)
 			h.logRequest(ctx, logContext{
@@ -414,14 +421,9 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	})
 	span.SetStatus(codes.Ok, "")
 	span.SetAttributes(
-		attribute.String("sentinel.decision", "ALLOW"),
-		attribute.Bool("sentinel.cache_hit", meta.Cached),
+		attribute.String("omniswitch.decision", "ALLOW"),
+		attribute.Bool("omniswitch.cache_hit", meta.Cached),
 		attribute.String("llm.response.provider", meta.Provider),
-		attribute.String("llm.response.model", meta.Model),
-		attribute.Int("llm.usage.prompt_tokens", resp.Usage.PromptTokens),
-		attribute.Int("llm.usage.completion_tokens", resp.Usage.CompletionTokens),
-		attribute.Int("llm.usage.total_tokens", resp.Usage.TotalTokens),
-		attribute.Float64("llm.usage.cost_usd", meta.Cost),
 	)
 	h.shadow(ctx, activeRouter, reqID, traceID, meta.Provider, backendReq, shadowHint)
 
@@ -590,7 +592,7 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "provider stream error")
-			span.SetAttributes(attribute.String("llm.response.provider", meta.Provider))
+			setChatProviderSpan(span, meta)
 			h.logRequest(ctx, logContext{
 				ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Meta: &meta,
 				APIKeyID: streamCtx.APIKeyID, Status: "error", ErrorMessage: err.Error(),
@@ -622,6 +624,7 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 			}},
 		}
 		var buffered []provider.ChatResponseChunk
+		finishReasons := make(map[int]string)
 		for chunk := range chunks {
 			if chunk.ID != "" {
 				aggregated.ID = chunk.ID
@@ -630,6 +633,9 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 				aggregated.Model = chunk.Model
 			}
 			for _, choice := range chunk.Choices {
+				if choice.FinishReason != "" {
+					finishReasons[choice.Index] = choice.FinishReason
+				}
 				if choice.Index == 0 {
 					if choice.Delta.Role != "" {
 						aggregated.Choices[0].Message.Role = choice.Delta.Role
@@ -655,10 +661,13 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 			}
 		}
 
+		setChatResponseSpan(span, aggregated, meta)
+		setStreamFinishReasons(span, finishReasons)
 		if bufferOutput {
 			disp := h.outputGuardrailDisposition(ctx, streamCtx.ID, &aggregated)
 			if disp.Denied {
 				span.SetStatus(codes.Error, "stream output guardrail denied")
+				span.SetAttributes(attribute.String("omniswitch.decision", "DENY"), attribute.String("omniswitch.decision_reason", disp.Reason))
 				h.logRequest(ctx, logContext{
 					ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Response: &aggregated, Meta: &meta,
 					APIKeyID: streamCtx.APIKeyID, Status: "denied", ErrorMessage: disp.Reason,
@@ -723,13 +732,9 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 	})
 	span.SetStatus(codes.Ok, "")
 	span.SetAttributes(
-		attribute.String("sentinel.decision", "ALLOW"),
+		attribute.String("omniswitch.decision", "ALLOW"),
 		attribute.String("llm.response.provider", meta.Provider),
-		attribute.String("llm.response.model", aggregated.Model),
-		attribute.Int("llm.usage.prompt_tokens", aggregated.Usage.PromptTokens),
-		attribute.Int("llm.usage.completion_tokens", aggregated.Usage.CompletionTokens),
-		attribute.Int("llm.usage.total_tokens", aggregated.Usage.TotalTokens),
-		attribute.Float64("llm.usage.cost_usd", meta.Cost),
+		attribute.Bool("omniswitch.cache_hit", meta.Cached),
 	)
 	h.shadow(ctx, activeRouter, streamCtx.ID, streamCtx.TraceID, meta.Provider, streamCtx.BackendRequest, streamCtx.ShadowHint)
 }
