@@ -23,11 +23,11 @@ OmniSwitch is in public beta. This page lists limitations that are current, know
 
 ## Caching
 
-- **Semantic cache is token-frequency cosine similarity, not embeddings.** OmniSwitch's semantic cache matches requests using cosine similarity over token-frequency vectors of the prompt text — it does not call an embedding model. This is cheaper and dependency-free, but it is a weaker notion of "semantic" than a vector-embedding-based cache: it will miss paraphrases that an embedding model would catch, and can occasionally match on superficial token overlap rather than true meaning. Treat it as an exact-ish cache with some tolerance for whitespace/formatting differences, not as embedding-quality semantic matching.
+- **Lexical similarity cache uses token-frequency cosine, not embeddings.** Lowercased, stop-word-filtered token counts form normalized vectors. No embedding model is called; paraphrases can be missed, and superficial token overlap can match despite different meanings. Do not treat it as embedding-quality matching.
 
 ## Authorization
 
-- **`authorization.external` is not implemented.** If you set this option in `GatewayConfig`, config validation now fails explicitly with a "not implemented" error instead of silently accepting the setting and doing nothing (see the sibling first-run/config-truth work tracked in `ROADMAP.md`). Use the built-in API key or OIDC/JWKS + CEL policy authorization instead.
+- **External HTTP authorization is not supported.** The unused callout config type was removed; legacy external-callout fields now fail strict parsing as unknown fields. Use API keys or OIDC/JWKS plus CEL policy authorization instead.
 
 ## Reporting something not listed here
 

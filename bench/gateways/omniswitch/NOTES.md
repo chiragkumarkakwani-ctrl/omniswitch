@@ -35,8 +35,8 @@
 - **Cache.** Not enabled by default in either cell (`cache_scope` is set
   but no cache TTL is configured, so nothing is cached). Scenario S6
   overlays a cache-specific config with `cache_ttl` and, for the
-  semantic-cache cell, `cache_threshold: 0.95` (the project's own documented
-  default). **State precisely:** OmniSwitch's "semantic" cache is
+  lexical-similarity cache cell, `cache_threshold: 0.95` (the project's own documented
+  default). **State precisely:** OmniSwitch's lexical similarity cache is
   normalized token-frequency cosine similarity (`internal/cache/cache.go`),
   not an embedding-based cache. Do not describe it as "vector similarity"
   in any report generated from this harness.

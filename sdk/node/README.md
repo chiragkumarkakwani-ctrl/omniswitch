@@ -17,7 +17,7 @@ const { OmniSwitch } = require("omniswitch");
 
 const client = new OmniSwitch({
   gatewayUrl: "http://localhost:8080",
-  apiKey: "sk-omniswitch-...",
+  apiKey: "sk-osw-...",
   config: "production-routing",
   traceId: "agent-run-001",
   sessionId: "conversation-abc",
@@ -37,7 +37,7 @@ The gateway URL may include `/v1`, but does not have to.
 
 ```bash
 export OMNISWITCH_GATEWAY_URL=http://localhost:8080
-export OMNISWITCH_API_KEY=sk-omniswitch-...
+export OMNISWITCH_API_KEY=sk-osw-...
 export OMNISWITCH_CONFIG=production-routing
 export OMNISWITCH_TRACE_ID=agent-run-001
 export OMNISWITCH_SESSION_ID=conversation-abc

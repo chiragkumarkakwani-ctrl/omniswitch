@@ -15,7 +15,7 @@ oss_vs_enterprise_caveat: >
       plugin (Enterprise).
     - Token-aware / model-aware rate limiting: "AI Rate Limiting Advanced"
       plugin (Enterprise).
-    - Semantic cache: separate "AI Semantic Cache" plugin; licensing/tier
+    - Embedding-based similarity cache: separate AI cache plugin; licensing/tier
       unclear at research time, treated as unavailable in this OSS-only
       harness cell.
   These are marked `n/a` (not `no`) in the results matrix for the OSS
