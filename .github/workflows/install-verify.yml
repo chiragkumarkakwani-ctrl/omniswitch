@@ -101,7 +101,8 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ needs.resolve.outputs.tag }}"
-          $url = "https://github.com/omniswitch-dev/omniswitch/releases/download/$tag/omniswitch_${tag}_windows_amd64.zip"
+          $version = "${{ needs.resolve.outputs.version }}"
+          $url = "https://github.com/omniswitch-dev/omniswitch/releases/download/$tag/omniswitch_${version}_windows_amd64.zip"
           Write-Host "Downloading $url"
           Invoke-WebRequest -Uri $url -OutFile omniswitch.zip
           Expand-Archive -Path omniswitch.zip -DestinationPath extracted -Force
