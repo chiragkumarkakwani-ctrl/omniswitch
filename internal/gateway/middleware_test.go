@@ -27,6 +27,48 @@ func (fn tokenAuthenticatorFunc) Authenticate(ctx context.Context, token string)
 	return fn(ctx, token)
 }
 
+func TestAuthMiddlewareAcceptsCurrentAndLegacyKeyFormats(t *testing.T) {
+	for _, prefix := range []string{"sk-osw-", "sk-sentinel-"} {
+		t.Run(prefix, func(t *testing.T) {
+			st := newGatewayTestStore(t)
+			rawKey := prefix + strings.Repeat("ab", 32)
+			hash := sha256.Sum256([]byte(rawKey))
+			if err := st.InsertAPIKey(context.Background(), store.APIKey{
+				ID: "key_legacy_or_current", Name: "compatible", KeyHash: hex.EncodeToString(hash[:]),
+				KeyPrefix: prefix + "abcdef…", Enabled: true, CreatedAt: time.Now().UTC(),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			handler := NewAuthMiddleware(st, true).Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("x-omniswitch-key-id") != "key_legacy_or_current" {
+					t.Error("authenticated token lost its key identity")
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			otherPrefix := "sk-osw-"
+			if prefix == otherPrefix {
+				otherPrefix = "sk-sentinel-"
+			}
+			for _, test := range []struct {
+				token string
+				want  int
+			}{
+				{rawKey, http.StatusNoContent},
+				{rawKey[:len(rawKey)-1] + "c", http.StatusUnauthorized},
+				{otherPrefix + strings.TrimPrefix(rawKey, prefix), http.StatusUnauthorized},
+			} {
+				req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+				req.Header.Set("Authorization", "Bearer "+test.token)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != test.want {
+					t.Fatalf("status = %d, want %d (middleware must hash the full token)", rec.Code, test.want)
+				}
+			}
+		})
+	}
+}
+
 func TestAuthMiddlewareSetsKeyHeaders(t *testing.T) {
 	st := newGatewayTestStore(t)
 	rawKey := "sk-sentinel-auth-test"

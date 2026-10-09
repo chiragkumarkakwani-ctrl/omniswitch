@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -29,13 +30,17 @@ func TestCreateListDeleteAPIKey(t *testing.T) {
 	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !strings.HasPrefix(created.Key, "sk-sentinel-") || created.APIKey.KeyHash != "" {
+	if !regexp.MustCompile(`^sk-osw-[0-9a-f]{64}$`).MatchString(created.Key) || created.APIKey.KeyHash != "" {
 		t.Fatalf("created response = %+v, want raw key and redacted hash", created)
 	}
 	hash := sha256.Sum256([]byte(created.Key))
 	stored, err := st.GetAPIKeyByHash(context.Background(), hex.EncodeToString(hash[:]))
 	if err != nil {
 		t.Fatalf("GetAPIKeyByHash() error = %v", err)
+	}
+	wantPrefix := "sk-osw-" + strings.TrimPrefix(created.Key, "sk-osw-")[:6] + "…"
+	if stored.KeyPrefix != wantPrefix || created.APIKey.KeyPrefix != wantPrefix {
+		t.Fatalf("stored/returned display prefix = %q/%q, want %q", stored.KeyPrefix, created.APIKey.KeyPrefix, wantPrefix)
 	}
 	if stored.RateLimit != 3 || stored.WorkspaceID != "ws_1" || stored.Role != "admin" {
 		t.Fatalf("stored key = %+v, want rate limit 3 and workspace role", stored)
