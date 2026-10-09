@@ -39,11 +39,34 @@ export async function mcp(ctx) {
     ),
   );
   if (tab === "a2a") {
-    const [config, card] = await Promise.all([
-      get("/api/config", { signal: ctx.signal }),
-      get("/.well-known/agent-card.json", { signal: ctx.signal }),
-    ]);
+    const config = await get("/api/config", { signal: ctx.signal });
     const a = config.a2a || {};
+    if (!a.enabled) {
+      root.append(
+        empty(
+          "A2A is disabled",
+          "Enable A2A in the gateway config to publish an Agent Card and mapped skills.",
+          link("Review settings", "/settings?tab=raw"),
+          "mcp",
+        ),
+      );
+      return root;
+    }
+    const card = await get("/.well-known/agent-card.json", { signal: ctx.signal }).catch((error) => {
+      if (error.status === 404) return null;
+      throw error;
+    });
+    if (!card) {
+      root.append(
+        empty(
+          "Agent Card unavailable",
+          "A2A is configured, but no Agent Card was returned by this gateway.",
+          link("Review settings", "/settings"),
+          "mcp",
+        ),
+      );
+      return root;
+    }
     root.append(
       panel(
         "Published A2A capabilities",
@@ -72,15 +95,22 @@ export async function mcp(ctx) {
             ? notice("Cancellation is best effort, not guaranteed upstream interruption.")
             : null,
           note("Streaming is SSE task events, not token generation or a downstream A2A proxy."),
-          table(
-            "Published agent skills",
-            [
-              { label: "Skill", key: "name" },
-              { label: "Description", key: "description", class: "wrap" },
-              { label: "Tags", render: (s) => (s.tags || []).join(", ") },
-            ],
-            card.skills || [],
-          ),
+          card.skills?.length
+            ? table(
+                "Published agent skills",
+                [
+                  { label: "Skill", key: "name" },
+                  { label: "Description", key: "description", class: "wrap" },
+                  { label: "Tags", render: (skill) => (skill.tags || []).join(", ") },
+                ],
+                card.skills,
+              )
+            : empty(
+                "No published agent skills",
+                "Add a mapped skill to the A2A config to publish it here.",
+                link("Review settings", "/settings?tab=raw"),
+                "mcp",
+              ),
         ),
       ),
     );
@@ -189,7 +219,10 @@ export async function mcp(ctx) {
         "",
         "mcp",
       );
-  if (selector) root.append(selector);
+  if (selector) {
+    selector.classList.add("principal-selector");
+    root.append(selector);
+  }
   root.append(
     h(
       "p",
@@ -203,7 +236,7 @@ export async function mcp(ctx) {
     ),
     h(
       "div",
-      { class: "two-col" },
+      { class: "two-col mcp-layout" },
       panel("Connected targets", targetCards, pill(targets.targets.length + " targets", "muted")),
       panel(
         "Tool catalog",

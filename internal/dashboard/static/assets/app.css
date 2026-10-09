@@ -1816,3 +1816,16 @@ textarea.input {
     height: 140px;
   }
 }
+
+/* Leave room for tool names and policy explanations beside the target picker. */
+.mcp-layout {
+  grid-template-columns: minmax(250px, 0.8fr) minmax(0, 2fr);
+}
+.principal-selector {
+  max-width: 320px;
+}
+@media (max-width: 960px) {
+  .mcp-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

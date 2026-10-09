@@ -381,6 +381,15 @@ export async function access(ctx) {
               { label: "Scope", key: "scope" },
               { label: "Limit", render: (p) => number(p.limit) + " " + p.unit },
               { label: "Window", key: "window" },
+              {
+                label: "Match",
+                render: (policy) =>
+                  typeof policy.match === "string"
+                    ? policy.match
+                    : Object.entries(policy.match || {})
+                        .map(([name, value]) => name + "=" + value)
+                        .join(", ") || "All within scope",
+              },
               { label: "Management", render: () => note("Defined in config file") },
             ],
             config.rate_limit.policies,

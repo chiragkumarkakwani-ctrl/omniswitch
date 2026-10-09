@@ -33,7 +33,9 @@
         "unit": "usd",
         "limit": 10,
         "window": "24h",
-        "match": "development",
+        "match": {
+          "workspace_id": "ws_development"
+        },
         "action": "reject"
       }
     ]
