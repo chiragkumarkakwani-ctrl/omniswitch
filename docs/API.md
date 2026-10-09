@@ -93,6 +93,71 @@ providers forward rerank traffic to `/rerank`; fallback chains skip providers
 without rerank support. Query and document text are inspected by input
 guardrails before the provider call.
 
+### Image and audio endpoints
+
+| Endpoint | Request / response | Supported providers |
+|----------|--------------------|---------------------|
+| `POST /v1/images/generations` | JSON / OpenAI image JSON | Native OpenAI adapter, including its named aliases |
+| `POST /v1/audio/transcriptions` | Multipart / JSON transcript | Native OpenAI adapter, including its named aliases |
+| `POST /v1/audio/speech` | JSON / streamed binary audio | Native OpenAI adapter, including its named aliases |
+
+These routes use the gateway's authentication, routing/fallbacks, monthly
+budget gates, trace/session headers, and request logging. Prompt/input text is
+inspected by input guardrails, and transcript text is inspected by output
+guardrails. Redaction occurs before forwarding input or returning/logging a
+transcript. Guardrail retry/reroute/fallback actions fail closed on these media
+routes instead of releasing flagged content. Image pixels, uploaded audio, and
+synthesized audio are not text-scanned. Binary bodies are not persisted in raw
+request/response logs.
+
+Selecting a provider without the capability returns HTTP 400 rather than an
+upstream failure:
+
+```json
+{"error":{"message":"provider does not support this endpoint","type":"invalid_request_error","code":"unsupported_endpoint"}}
+```
+
+Azure, Groq, Anthropic, Google, Cohere, Bedrock, and generic OpenAI-compatible
+custom adapters do not gain image/audio capabilities from their chat support.
+A capable fallback may still serve the request. Provider failures remain 502;
+existing exhausted monthly budgets return 402 `budget_exceeded`. Media pricing
+currently reports `cost_source: unpriced` in request metadata; a zero recorded
+cost does not imply free usage, and binary input does not imply a token count.
+
+#### `POST /v1/images/generations`
+
+Accepts `prompt` (required), `model` (default `dall-e-2`), and the existing
+OpenAI image fields `n`, `size`, `quality`, `response_format`, and `user`.
+`n` defaults to 1. Returns the upstream `created` and `data` array with image
+URLs or base64 JSON.
+
+```json
+{"model":"dall-e-3","prompt":"A mountain at sunrise","n":1,"size":"1024x1024","response_format":"b64_json"}
+```
+
+#### `POST /v1/audio/transcriptions`
+
+Accepts `multipart/form-data` with required `file` and `model`, plus optional
+`language`, `prompt`, `temperature` (0–1), and `response_format: json`.
+Alternate transcript response formats are rejected with 400
+`unsupported_parameter`. Returns `{"text":"..."}` after transcript guardrails.
+The entire multipart body is bounded by `gateway.max_upload_bytes` (default
+25 MiB), configurable through `OMNISWITCH_MAX_UPLOAD_BYTES`. Oversized bodies
+return 413 `payload_too_large`, including uploads without Content-Length.
+See [upload limits](CONFIGURATION.md#security-and-runtime-limits).
+
+#### `POST /v1/audio/speech`
+
+Accepts required `model`, `input`, and `voice`, plus optional `response_format`
+and `speed` (0.25–4). The response streams the upstream audio bytes as they
+arrive with the provider's Content-Type; it is not wrapped in JSON or SSE.
+A stream failure after headers are sent is recorded as an error and never
+appends a JSON error body to partial audio.
+
+```json
+{"model":"tts-1","input":"Hello","voice":"alloy","response_format":"mp3"}
+```
+
 ### `GET /v1/models`
 
 Returns all models registered through provider adapters and provider catalog aliases.

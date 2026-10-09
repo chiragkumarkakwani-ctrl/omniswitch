@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -33,6 +34,7 @@ type runtimeSettings struct {
 	rateLimitFailOpen      bool
 	guardrailStreamBuffer  bool
 	maxRequestBytes        int64
+	maxUploadBytes         int64
 	readHeaderTimeout      time.Duration
 	readTimeout            time.Duration
 	writeTimeout           time.Duration
@@ -84,6 +86,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 		rateLimitPrefix:        "omniswitch:ratelimit",
 		guardrailStreamBuffer:  true,
 		maxRequestBytes:        10 << 20,
+		maxUploadBytes:         25 << 20,
 		readHeaderTimeout:      5 * time.Second,
 		readTimeout:            30 * time.Second,
 		// Streaming responses can run for longer than a normal request; use a
@@ -119,6 +122,13 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings.logPayloads = envBool("OMNISWITCH_LOG_PAYLOADS", settings.logPayloads)
 	settings.guardrailStreamBuffer = envBool("OMNISWITCH_GUARDRAIL_STREAM_BUFFER", settings.guardrailStreamBuffer)
 	settings.maxRequestBytes = envInt64("OMNISWITCH_MAX_REQUEST_BYTES", settings.maxRequestBytes)
+	if value := strings.TrimSpace(os.Getenv("OMNISWITCH_MAX_UPLOAD_BYTES")); value != "" {
+		limit, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || limit <= 0 {
+			return settings, fmt.Errorf("OMNISWITCH_MAX_UPLOAD_BYTES must be a positive integer")
+		}
+		settings.maxUploadBytes = limit
+	}
 	settings.readHeaderTimeout = envDuration("OMNISWITCH_READ_HEADER_TIMEOUT", settings.readHeaderTimeout)
 	settings.readTimeout = envDuration("OMNISWITCH_READ_TIMEOUT", settings.readTimeout)
 	settings.writeTimeout = envDuration("OMNISWITCH_WRITE_TIMEOUT", settings.writeTimeout)
@@ -207,6 +217,9 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	}
 	if cfg.Gateway.MaxRequestBytes > 0 {
 		settings.maxRequestBytes = cfg.Gateway.MaxRequestBytes
+	}
+	if cfg.Gateway.MaxUploadBytes > 0 {
+		settings.maxUploadBytes = cfg.Gateway.MaxUploadBytes
 	}
 	if cfg.Gateway.ReadHeaderTimeout != nil {
 		settings.readHeaderTimeout = cfg.Gateway.ReadHeaderTimeout.Duration
@@ -517,6 +530,11 @@ func applyHotConfig(cfg gatewayconfig.Config, rtr *router.Router, gw *gateway.Ha
 	if cfg.Gateway.MaxRequestBytes > 0 {
 		gw.SetMaxRequestBytes(cfg.Gateway.MaxRequestBytes)
 	}
+	maxUploadBytes := int64(25 << 20)
+	if cfg.Gateway.MaxUploadBytes > 0 {
+		maxUploadBytes = cfg.Gateway.MaxUploadBytes
+	}
+	gw.SetMaxUploadBytes(envInt64("OMNISWITCH_MAX_UPLOAD_BYTES", maxUploadBytes))
 	if cfg.Gateway.ShadowProvider != "" {
 		gw.SetShadowProvider(cfg.Gateway.ShadowProvider)
 	} else {

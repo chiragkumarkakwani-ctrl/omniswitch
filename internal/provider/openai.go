@@ -19,13 +19,26 @@ type OpenAI struct {
 	client  *http.Client
 }
 
+// OpenAIOption customizes a native OpenAI adapter.
+type OpenAIOption func(*OpenAI)
+
+// WithOpenAIBaseURL changes the endpoint without losing native image/audio
+// capabilities. The default endpoint remains https://api.openai.com/v1.
+func WithOpenAIBaseURL(baseURL string) OpenAIOption {
+	return func(o *OpenAI) { o.baseURL = strings.TrimRight(baseURL, "/") }
+}
+
 // NewOpenAI creates a new OpenAI provider.
-func NewOpenAI(apiKey string) *OpenAI {
-	return &OpenAI{
+func NewOpenAI(apiKey string, options ...OpenAIOption) *OpenAI {
+	o := &OpenAI{
 		apiKey:  apiKey,
 		baseURL: "https://api.openai.com/v1",
 		client:  &http.Client{Timeout: 120 * time.Second},
 	}
+	for _, option := range options {
+		option(o)
+	}
+	return o
 }
 
 func (o *OpenAI) Name() string { return "openai" }

@@ -31,6 +31,7 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 			"log_payloads":             settings.logPayloads,
 			"cors_origins":             append([]string(nil), settings.corsOrigins...),
 			"max_request_bytes":        settings.maxRequestBytes,
+			"max_upload_bytes":         settings.maxUploadBytes,
 			"read_header_timeout":      settings.readHeaderTimeout.String(),
 			"read_timeout":             settings.readTimeout.String(),
 			"write_timeout":            settings.writeTimeout.String(),

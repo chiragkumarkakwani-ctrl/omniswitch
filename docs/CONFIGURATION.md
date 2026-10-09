@@ -258,6 +258,22 @@ cross-origin browser access. `max_request_bytes`, `read_header_timeout`,
 limits. The write timeout defaults to `0s` so long-running SSE streams are not
 cut off; set a positive value only when streaming is not required.
 
+`gateway.max_upload_bytes` bounds the complete multipart body for
+`POST /v1/audio/transcriptions`, including form fields and multipart overhead.
+It defaults to 25 MiB (`26214400` bytes), independently of
+`gateway.max_request_bytes` (the JSON body limit). Omitted or zero config values
+use the default; negative values fail validation. `OMNISWITCH_MAX_UPLOAD_BYTES`
+overrides the config with a positive integer byte limit. The upload limit is
+hot-reloadable and appears as `gateway.max_upload_bytes` in `/api/config`.
+Oversized uploads, including chunked bodies without a Content-Length, return
+HTTP 413 `payload_too_large`; temporary multipart files are removed after the
+request.
+
+```yaml
+gateway:
+  max_upload_bytes: 26214400
+```
+
 `gateway.storage` selects the store backend: `sqlite` (default) or `postgres`.
 When set to `postgres`, `gateway.storage_url` (a `postgres://` or
 `postgresql://` DSN) is required and config validation rejects the file
@@ -446,6 +462,7 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 - `OMNISWITCH_CORS_ORIGINS`
 - `OMNISWITCH_GUARDRAIL_STREAM_BUFFER`
 - `OMNISWITCH_MAX_REQUEST_BYTES`
+- `OMNISWITCH_MAX_UPLOAD_BYTES` (positive multipart byte limit; default 25 MiB)
 - `OMNISWITCH_READ_HEADER_TIMEOUT`
 - `OMNISWITCH_READ_TIMEOUT`
 - `OMNISWITCH_WRITE_TIMEOUT`

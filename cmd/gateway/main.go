@@ -131,6 +131,7 @@ func runServe() {
 	gw.SetLogPayloads(settings.logPayloads)
 	gw.SetStreamGuardrailBuffer(settings.guardrailStreamBuffer)
 	gw.SetMaxRequestBytes(settings.maxRequestBytes)
+	gw.SetMaxUploadBytes(settings.maxUploadBytes)
 	gw.SetShadowProvider(settings.shadowProvider)
 	gw.SetAlerts(settings.alerts)
 	if settings.configPath != "" {

@@ -99,6 +99,7 @@ type Gateway struct {
 	CircuitBreakerFailures *int         `json:"circuit_breaker_failures,omitempty" yaml:"circuit_breaker_failures,omitempty"`
 	CircuitBreakerCooldown *Duration    `json:"circuit_breaker_cooldown,omitempty" yaml:"circuit_breaker_cooldown,omitempty"`
 	MaxRequestBytes        int64        `json:"max_request_bytes,omitempty" yaml:"max_request_bytes,omitempty"`
+	MaxUploadBytes         int64        `json:"max_upload_bytes,omitempty" yaml:"max_upload_bytes,omitempty"`
 	ReadHeaderTimeout      *Duration    `json:"read_header_timeout,omitempty" yaml:"read_header_timeout,omitempty"`
 	ReadTimeout            *Duration    `json:"read_timeout,omitempty" yaml:"read_timeout,omitempty"`
 	WriteTimeout           *Duration    `json:"write_timeout,omitempty" yaml:"write_timeout,omitempty"`
@@ -289,6 +290,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Gateway.MaxRequestBytes < 0 {
 		return fmt.Errorf("gateway.max_request_bytes must be non-negative")
+	}
+	if cfg.Gateway.MaxUploadBytes < 0 {
+		return fmt.Errorf("gateway.max_upload_bytes must be non-negative")
 	}
 	if storage := strings.ToLower(strings.TrimSpace(cfg.Gateway.Storage)); storage != "" {
 		switch storage {
