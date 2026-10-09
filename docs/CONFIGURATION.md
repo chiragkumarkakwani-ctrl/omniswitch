@@ -21,6 +21,7 @@ kind: GatewayConfig
 gateway:
   listen: ":8080"
   data_dir: ".omniswitch"
+  migrate_on_start: true
   auth: true
   cache_threshold: 0.95
   cache_ttl: 24h
@@ -265,6 +266,17 @@ without it. The `OMNISWITCH_DATABASE_URL` environment variable always takes
 precedence over `gateway.storage_url`, so an operator can override storage
 without editing the config file.
 
+`gateway.migrate_on_start` defaults to `true`. Startup applies pending versioned
+schema migrations, adopting existing v0.1.0 data without rewriting it. Each
+version is transactional; PostgreSQL uses an advisory lock across the whole run
+so replicas do not race. Set `gateway.migrate_on_start: false` or
+`OMNISWITCH_MIGRATE_ON_START=false` to open the store without changing its schema.
+When migrations are pending, `/readyz` returns HTTP 503 with
+`reason: "schema_pending"` and the `current` and `latest` schema versions.
+Bootstrap key initialization is deferred until the schema is current. Re-enable startup
+migrations before sending traffic. `GET /api/config` reports
+`storage{driver, schema_version, pending_migrations}` without exposing the DSN.
+
 `gateway.alerts` sends threshold-based notifications (for example, elevated
 error rates) to a webhook and/or Slack incoming webhook URL:
 
@@ -403,6 +415,7 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 
 - `OMNISWITCH_LISTEN`
 - `OMNISWITCH_DATA`
+- `OMNISWITCH_MIGRATE_ON_START` - defaults to `true`; overrides `gateway.migrate_on_start`. When `false`, pending schema migrations are not applied and `/readyz` returns `schema_pending`.
 - `OMNISWITCH_DATABASE_URL` - a `postgres://` DSN enables PostgreSQL storage so multiple gateway replicas share keys, logs, budgets, and configuration. When unset (or not a postgres URL), SQLite in the data directory is used.
 - `OMNISWITCH_AUTH`
 - `OMNISWITCH_BOOTSTRAP_API_KEY`
@@ -457,6 +470,6 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 
 See [`docs/CLI.md`](CLI.md) for `omniswitch serve`, `omniswitch validate-config`,
 and `omniswitch version`. `GET /healthz` (liveness) and `GET /readyz`
-(readiness: store reachability and provider registration) are always
+(readiness: store reachability, current schema, and provider registration) are always
 unauthenticated, independent of `gateway.auth`, and safe to point Kubernetes
 or load-balancer health checks at.

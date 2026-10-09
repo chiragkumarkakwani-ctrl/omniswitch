@@ -86,6 +86,7 @@ type Gateway struct {
 	DataDir        string    `json:"data_dir,omitempty" yaml:"data_dir,omitempty"`
 	Storage        string    `json:"storage,omitempty" yaml:"storage,omitempty"`
 	StorageURL     string    `json:"storage_url,omitempty" yaml:"storage_url,omitempty"`
+	MigrateOnStart *bool     `json:"migrate_on_start,omitempty" yaml:"migrate_on_start,omitempty"`
 	Auth           *bool     `json:"auth,omitempty" yaml:"auth,omitempty"`
 	CacheThreshold *float64  `json:"cache_threshold,omitempty" yaml:"cache_threshold,omitempty"`
 	CacheTTL       *Duration `json:"cache_ttl,omitempty" yaml:"cache_ttl,omitempty"`

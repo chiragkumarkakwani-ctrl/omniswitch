@@ -83,13 +83,13 @@ func runServe() {
 		dsn = strings.TrimSpace(settings.storageURL)
 	}
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		st, err = store.OpenPostgres(dsn)
+		st, err = store.OpenPostgres(dsn, store.WithMigrateOnStart(settings.migrateOnStart))
 		if err != nil {
 			log.Fatalf("failed to connect to postgres: %v", err)
 		}
 		log.Printf("using PostgreSQL storage (shared state across replicas)")
 	} else {
-		st, err = store.New(settings.dataDir)
+		st, err = store.New(settings.dataDir, store.WithMigrateOnStart(settings.migrateOnStart))
 		if err != nil {
 			log.Fatalf("failed to initialize store: %v", err)
 		}
@@ -159,6 +159,7 @@ func runServe() {
 	mux := newGatewayMux(routeHandlers{
 		settings: settings,
 		registry: registry,
+		store:    st,
 		gateway:  gw,
 		admin:    adminHandler,
 		feedback: feedbackHandler,
@@ -237,6 +238,14 @@ func runWithGracefulShutdown(server *http.Server, shutdownTimeout time.Duration)
 // control-plane API; only its SHA-256 hash is persisted.
 func ensureBootstrapKey(ctx context.Context, st *store.Store, settings runtimeSettings) error {
 	if !settings.authEnabled {
+		return nil
+	}
+	status, err := st.SchemaStatus(ctx)
+	if err != nil {
+		return fmt.Errorf("read authentication schema status: %w", err)
+	}
+	if status.Pending > 0 {
+		log.Printf("schema migrations pending (current=%d latest=%d); deferring bootstrap key initialization", status.Current, status.Latest)
 		return nil
 	}
 	if secret := strings.TrimSpace(settings.bootstrapAPIKey); secret != "" {

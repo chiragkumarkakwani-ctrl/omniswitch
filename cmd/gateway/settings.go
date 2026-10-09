@@ -39,6 +39,7 @@ type runtimeSettings struct {
 	idleTimeout            time.Duration
 	shadowProvider         string
 	storageURL             string
+	migrateOnStart         bool
 	alerts                 gateway.AlertConfig
 	mcpEnabled             bool
 	mcpPolicyPath          string
@@ -74,6 +75,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings := runtimeSettings{
 		listenAddr:             ":8080",
 		dataDir:                ".",
+		migrateOnStart:         true,
 		cacheThreshold:         0.95,
 		cacheTTL:               24 * time.Hour,
 		cacheScope:             "api_key",
@@ -112,6 +114,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 
 	settings.listenAddr = env("OMNISWITCH_LISTEN", settings.listenAddr)
 	settings.dataDir = env("OMNISWITCH_DATA", settings.dataDir)
+	settings.migrateOnStart = envBool("OMNISWITCH_MIGRATE_ON_START", settings.migrateOnStart)
 	settings.authEnabled = envBool("OMNISWITCH_AUTH", settings.authEnabled)
 	settings.cacheThreshold = envFloat("OMNISWITCH_CACHE_THRESHOLD", settings.cacheThreshold)
 	settings.cacheTTL = envDuration("OMNISWITCH_CACHE_TTL", settings.cacheTTL)
@@ -275,6 +278,9 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	}
 	if cfg.Gateway.ShadowProvider != "" {
 		settings.shadowProvider = cfg.Gateway.ShadowProvider
+	}
+	if cfg.Gateway.MigrateOnStart != nil {
+		settings.migrateOnStart = *cfg.Gateway.MigrateOnStart
 	}
 	if cfg.Gateway.StorageURL != "" {
 		settings.storageURL = cfg.Gateway.StorageURL

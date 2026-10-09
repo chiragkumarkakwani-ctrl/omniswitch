@@ -41,6 +41,31 @@ jobs:
           name: coverage
           path: coverage.out
 
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omniswitch
+          POSTGRES_DB: omniswitch
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omniswitch -d omniswitch"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OMNISWITCH_TEST_DATABASE_URL: postgres://omniswitch@localhost:5432/omniswitch?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+      - run: go test -race -p 2 ./internal/store ./internal/gateway ./cmd/gateway
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

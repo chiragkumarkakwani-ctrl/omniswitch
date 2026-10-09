@@ -42,6 +42,7 @@ func newRouteTestServer(t *testing.T) http.Handler {
 	mux := newGatewayMux(routeHandlers{
 		settings: settings,
 		registry: registry,
+		store:    st,
 		gateway:  gw,
 		admin:    admin.New(st),
 		feedback: feedback.New(st),
