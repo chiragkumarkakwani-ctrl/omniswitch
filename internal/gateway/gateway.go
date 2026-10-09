@@ -728,6 +728,19 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 				flusher.Flush()
 			}
 		} else {
+			if err := validateCompatibleResponse(ctx, aggregated); err != nil {
+				h.logRequest(ctx, logContext{
+					ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Response: &aggregated, Meta: &meta, APIKeyID: streamCtx.APIKeyID,
+					Status: "error", ErrorMessage: err.Error(),
+				})
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "compatibility stream error")
+				// The translator turns completion into api_error on an already-open
+				// stream. HTTP status is immutable here; never cache bad arguments.
+				_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+				flusher.Flush()
+				return
+			}
 			fmt.Fprint(w, "data: [DONE]\n\n")
 			flusher.Flush()
 		}

@@ -754,3 +754,28 @@ func TestMessagesSendsIdlePingThroughHTTPHandler(t *testing.T) {
 		t.Fatalf("ping=%t stop=%t", pingSeen, stopSeen)
 	}
 }
+
+func TestMalformedLiveMessagesStreamIsNotCachedAndLogsError(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeCompatChunks(w, []json.RawMessage{json.RawMessage(`{"id":"chat_bad","created":1,"model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"f","arguments":"{"}}]},"finish_reason":"tool_calls"}]}`), json.RawMessage(`"[DONE]"`)})
+	}))
+	defer upstream.Close()
+	handler, st := newCompatHandler(t, upstream.URL, guardrail.NewEngine())
+	handler.SetStreamGuardrailBuffer(false)
+	handler.SetSemanticCache(1)
+	for turn := 0; turn < 2; turn++ {
+		rec := serveCompat(handler, "messages", []byte(`{"model":"test-model","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), "event: error") || strings.Contains(rec.Body.String(), "message_stop") || rec.Header().Get("x-omniswitch-cache") == "HIT" {
+			t.Fatalf("live failure = %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	if calls.Load() != 2 {
+		t.Fatal("malformed live output must not be cached")
+	}
+	_, total, err := st.ListLogs(context.Background(), 10, 0, "", "error")
+	if err != nil || total != 2 {
+		t.Fatalf("error logs = %d %v", total, err)
+	}
+}
