@@ -1,0 +1,48 @@
+{
+  "total": 1,
+  "allowed": 0,
+  "denied": 1,
+  "errors": 0,
+  "results": [
+    {
+      "index": 0,
+      "request": {
+        "agent": {
+          "id": "key_agent",
+          "department": "engineering",
+          "role": "member"
+        },
+        "tool": {
+          "name": "workspace__delete_file"
+        },
+        "action": {
+          "name": "call"
+        },
+        "resource": {
+          "type": "file",
+          "name": "notes.txt",
+          "environment": "production"
+        },
+        "session": {
+          "id": "session_console"
+        },
+        "metadata": {}
+      },
+      "decision": {
+        "id": "decision_replay",
+        "allowed": false,
+        "rule": "production-delete",
+        "reason": "Destructive tools blocked",
+        "evaluation_time": 1000000,
+        "trace": [
+          {
+            "rule": "production-delete",
+            "expression": "action.name == \"call\"",
+            "effect": "deny",
+            "matched": true
+          }
+        ]
+      }
+    }
+  ]
+}

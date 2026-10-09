@@ -1,0 +1,18 @@
+{
+  "decisions": [
+    {
+      "timestamp": "2026-10-09T14:29:42Z",
+      "decision_id": "decision_1",
+      "agent_id": "key_agent",
+      "tool": "workspace__delete_file",
+      "action": "call",
+      "target": "workspace",
+      "decision": "DENY",
+      "rule": "production-delete",
+      "reason": "Destructive tools blocked",
+      "latency_ms": 1,
+      "trace_id": "trace_mcp_1"
+    }
+  ],
+  "total": 1
+}

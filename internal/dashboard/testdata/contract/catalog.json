@@ -1,0 +1,12 @@
+{
+  "verified_on": "2026-09-30",
+  "models": [
+    {
+      "provider": "openai",
+      "id": "gpt-4o-mini",
+      "input_per_million": 0.15,
+      "output_per_million": 0.6,
+      "source_url": "https://openai.com/api/pricing/"
+    }
+  ]
+}

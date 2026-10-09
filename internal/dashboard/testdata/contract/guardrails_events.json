@@ -1,0 +1,46 @@
+{
+  "events": [
+    {
+      "id": "ge_1",
+      "timestamp": "2026-10-09T14:29:42Z",
+      "type": "pii",
+      "action": "redact",
+      "matched": true,
+      "details": "Email pattern matched",
+      "request_id": "req_1",
+      "trace_id": "trace_9c42a1",
+      "model": "gpt-4o-mini",
+      "provider": "azure",
+      "api_key_id": "key_app"
+    },
+    {
+      "id": "ge_2",
+      "timestamp": "2026-10-09T14:29:42Z",
+      "type": "injection",
+      "action": "deny",
+      "matched": true,
+      "details": "Instruction override",
+      "request_id": "req_2",
+      "trace_id": "trace_3d8fa0",
+      "model": "gpt-4o-mini",
+      "provider": "azure",
+      "api_key_id": "key_agent"
+    },
+    {
+      "id": "ge_3",
+      "timestamp": "2026-10-09T14:29:42Z",
+      "type": "code_leakage",
+      "action": "deny",
+      "matched": true,
+      "details": "Credential pattern",
+      "request_id": "req_1",
+      "trace_id": "trace_9c42a1",
+      "model": "gpt-4o-mini",
+      "provider": "azure",
+      "api_key_id": "key_app"
+    }
+  ],
+  "total": 231,
+  "limit": 50,
+  "offset": 0
+}

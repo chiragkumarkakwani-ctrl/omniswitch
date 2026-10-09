@@ -1,0 +1,5 @@
+{
+  "path": "/etc/omniswitch/omniswitch.yaml",
+  "format": "yaml",
+  "body": "apiVersion: omniswitch.dev/v1\nkind: GatewayConfig\nroutes:\n  gpt-4o-mini:\n    provider: openai\n    fallbacks: [azure]\n"
+}

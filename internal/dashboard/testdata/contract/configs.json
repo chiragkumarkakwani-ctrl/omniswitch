@@ -1,0 +1,24 @@
+{
+  "configs": [
+    {
+      "id": "cfg_1",
+      "name": "production-default",
+      "description": "Default production routing",
+      "format": "yaml",
+      "body": "apiVersion: omniswitch.dev/v1\nkind: GatewayConfig\nroutes:\n  gpt-4o-mini:\n    provider: openai\n    fallbacks: [azure]\n",
+      "created_at": "2026-10-09T14:29:42Z",
+      "updated_at": "2026-10-09T14:29:42Z",
+      "enabled": true
+    },
+    {
+      "id": "cfg_2",
+      "name": "canary-evaluation",
+      "description": "Default production routing",
+      "format": "yaml",
+      "body": "apiVersion: omniswitch.dev/v1\nkind: GatewayConfig\nroutes:\n  gpt-4o-mini:\n    provider: openai\n    fallbacks: [azure]\n",
+      "created_at": "2026-10-09T14:29:42Z",
+      "updated_at": "2026-10-09T14:29:42Z",
+      "enabled": false
+    }
+  ]
+}

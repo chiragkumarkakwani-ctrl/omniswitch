@@ -1,0 +1,26 @@
+{
+  "providers": [
+    "openai",
+    "azure",
+    "anthropic",
+    "groq"
+  ],
+  "models": [
+    "gpt-4o-mini",
+    "claude-3-5-sonnet",
+    "llama-3.3-70b"
+  ],
+  "statuses": [
+    "success",
+    "error",
+    "denied",
+    "limited"
+  ],
+  "endpoints": [
+    "chat_completions",
+    "responses",
+    "messages",
+    "mcp",
+    "a2a"
+  ]
+}
