@@ -48,7 +48,6 @@ func TestGoldenFixturesForwardByteForByteToOpenAICompatibleUpstream(t *testing.T
 	}
 
 	for _, file := range files {
-		file := file
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			raw, err := os.ReadFile(file)
 			if err != nil {
