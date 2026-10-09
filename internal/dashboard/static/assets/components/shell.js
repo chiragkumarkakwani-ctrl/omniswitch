@@ -199,8 +199,9 @@ export function shell(ctx, onSignOut) {
     );
   if (session?.is_bootstrap && !bootstrapDismissed) {
     const banner = notice(
-      "Bootstrap administrator. Create scoped API keys for clients, store them " +
-      "safely, then rotate or revoke this bootstrap key.",
+      "Bootstrap administrator. Create a personal admin key and scoped client keys. " +
+        "Delete bootstrap-admin, then remove OMNISWITCH_BOOTSTRAP_API_KEY from the " +
+        "environment; otherwise a restart restores bootstrap access.",
       "amber",
       h(
         "div",

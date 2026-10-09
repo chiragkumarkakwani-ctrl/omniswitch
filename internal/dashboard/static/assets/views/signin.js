@@ -115,12 +115,13 @@ export function signin(ctx, message, onSuccess) {
     ],
     [
       "Enable authentication",
-      "Set OMNISWITCH_AUTH=true and start the gateway. The bootstrap key receives the owner role.",
+      "Set OMNISWITCH_AUTH=true and start the gateway. The bootstrap role defaults to owner; " +
+        "operators can set OMNISWITCH_BOOTSTRAP_ROLE.",
     ],
     [
       "Sign in, then issue scoped keys",
-      "Use the bootstrap key here. Create separate client keys in Access & Budgets," +
-      " then rotate or revoke the bootstrap key.",
+      "Create a personal admin key and scoped client keys in Access & Budgets. " +
+        "Delete bootstrap-admin and remove OMNISWITCH_BOOTSTRAP_API_KEY from the environment.",
     ],
   ];
   layout.main.append(

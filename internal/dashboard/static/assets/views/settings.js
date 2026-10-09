@@ -85,8 +85,8 @@ function retention(data, ctx) {
         : null,
       last?.error ? notice(last.error, "red") : null,
       notice(
-        "Config-file retention: 0 keeps data forever. Sweeps expire records; there " +
-        "is no arbitrary payload purge.",
+        "Config-file retention: 0 keeps data forever. Retention changes require a restart. " +
+          "Sweeps expire records; there is no arbitrary payload purge.",
         "purple",
       ),
     ),
@@ -139,14 +139,21 @@ async function rawEditor(ctx) {
     async (event) => {
       event.currentTarget.disabled = true;
       status.replaceChildren();
+      const revision = signature();
       try {
         const data = await post(
           "/api/config/validate",
-          { format: format.value, body: editor.value },
+          JSON.parse(revision),
           { signal: ctx.signal },
         );
+        if (signature() !== revision) {
+          validated = "";
+          save.disabled = true;
+          status.replaceChildren(note("Changed while validation ran. Validate again before saving."));
+          return;
+        }
         if (data.valid) {
-          validated = signature();
+          validated = revision;
           save.disabled = false;
           status.replaceChildren(
             notice("Valid configuration. You can save this revision.", "green"),

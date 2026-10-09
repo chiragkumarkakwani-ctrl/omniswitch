@@ -317,6 +317,19 @@ h1:focus {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+.topbar-right > select {
+  width: 160px;
+  flex: 0 0 160px;
+}
+#circuit-summary {
+  max-width: 160px;
+  flex: 0 1 auto;
+}
+.icon-button {
+  min-width: 44px;
+  flex-shrink: 0;
 }
 .account {
   display: flex;
@@ -1632,7 +1645,12 @@ textarea.input {
   flex: 1;
 }
 .first-run {
-  padding: 8px 0;
+  padding: 24px;
+  margin-top: 43px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  align-self: start;
 }
 .first-run h2 {
   font-size: 16px;
@@ -1646,9 +1664,30 @@ textarea.input {
   margin-top: 20px;
   gap: 20px;
 }
-.first-run-list li::marker {
+.first-run .first-run-list {
+  list-style: none;
+  padding-left: 0;
+  counter-reset: bootstrap-step;
+}
+.first-run .first-run-list li {
+  position: relative;
+  padding-left: 36px;
+  counter-increment: bootstrap-step;
+}
+.first-run .first-run-list li::before {
+  content: counter(bootstrap-step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
   color: var(--purple);
-  font-weight: 700;
+  background: #180e26;
+  border: 1px solid #43255f;
+  border-radius: 50%;
 }
 .first-run-list strong {
   font-size: 12px;
@@ -1700,6 +1739,9 @@ textarea.input {
     gap: 25px;
     margin: 25px auto;
   }
+  .first-run {
+    margin-top: 0;
+  }
   .overview-charts,
   .overview-bottom {
     grid-template-columns: 1fr;
@@ -1723,7 +1765,21 @@ textarea.input {
     display: none;
   }
   .topbar-right select {
-    max-width: 135px;
+    width: 135px;
+    min-width: 0;
+    flex: 0 0 135px;
+  }
+  #circuit-summary {
+    flex: 1 1 60px;
+    min-width: 0;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+  }
+  .tabs .tab,
+  .chart-table > summary {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
   }
   .topbar-right .pill {
     max-width: 125px;
