@@ -28,26 +28,30 @@ type Store struct {
 
 // RequestLog represents a logged gateway request.
 type RequestLog struct {
-	ID             string    `json:"id"`
-	Timestamp      time.Time `json:"timestamp"`
-	TraceID        string    `json:"trace_id,omitempty"`
-	SessionID      string    `json:"session_id,omitempty"`
-	Provider       string    `json:"provider"`
-	Model          string    `json:"model"`
-	APIKeyID       string    `json:"api_key_id"`
-	Status         string    `json:"status"`
-	InputTokens    int       `json:"input_tokens"`
-	OutputTokens   int       `json:"output_tokens"`
-	TotalTokens    int       `json:"total_tokens"`
-	LatencyMs      float64   `json:"latency_ms"`
-	Cost           float64   `json:"cost"`
-	RequestBody    string    `json:"request_body,omitempty"`
-	ResponseBody   string    `json:"response_body,omitempty"`
-	Decision       string    `json:"decision"`
-	DecisionReason string    `json:"decision_reason,omitempty"`
-	ErrorMessage   string    `json:"error,omitempty"`
-	Cached         bool      `json:"cached"`
-	Metadata       string    `json:"metadata,omitempty"`
+	ID              string    `json:"id"`
+	Timestamp       time.Time `json:"timestamp"`
+	TraceID         string    `json:"trace_id,omitempty"`
+	SessionID       string    `json:"session_id,omitempty"`
+	Endpoint        string    `json:"endpoint"`
+	Provider        string    `json:"provider"`
+	Model           string    `json:"model"`
+	APIKeyID        string    `json:"api_key_id"`
+	Status          string    `json:"status"`
+	InputTokens     int       `json:"input_tokens"`
+	OutputTokens    int       `json:"output_tokens"`
+	TotalTokens     int       `json:"total_tokens"`
+	CachedTokens    int       `json:"cached_tokens"`
+	ReasoningTokens int       `json:"reasoning_tokens"`
+	LatencyMs       float64   `json:"latency_ms"`
+	Cost            float64   `json:"cost"`
+	CostSource      string    `json:"cost_source"`
+	RequestBody     string    `json:"request_body,omitempty"`
+	ResponseBody    string    `json:"response_body,omitempty"`
+	Decision        string    `json:"decision"`
+	DecisionReason  string    `json:"decision_reason,omitempty"`
+	ErrorMessage    string    `json:"error,omitempty"`
+	Cached          bool      `json:"cached"`
+	Metadata        string    `json:"metadata,omitempty"`
 }
 
 // TraceSpan captures a single stage of request processing for waterfall views.
@@ -75,6 +79,10 @@ type APIKey struct {
 	SpendUSD           float64           `json:"spend_usd,omitempty"`
 	MonthlyCostBudget  float64           `json:"monthly_cost_budget,omitempty"`
 	MonthlyTokenBudget int               `json:"monthly_token_budget,omitempty"`
+	RequestsPerMinute  int               `json:"requests_per_minute"`
+	TokensPerMinute    int               `json:"tokens_per_minute"`
+	USDPerDay          float64           `json:"usd_per_day"`
+	LastUsedAt         *time.Time        `json:"last_used_at"`
 	Enabled            bool              `json:"enabled"`
 	Metadata           map[string]string `json:"metadata,omitempty"`
 }
@@ -239,7 +247,7 @@ type VirtualKeyRecord struct {
 }
 
 // New creates a new Store backed by a SQLite database at the given directory.
-func New(dir string) (*Store, error) {
+func New(dir string, options ...OpenOption) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
@@ -250,6 +258,13 @@ func New(dir string) (*Store, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	// One connection keeps SQLite pragmas consistent and serializes writes.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
 	// Enable WAL mode for concurrent reads.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
@@ -257,7 +272,7 @@ func New(dir string) (*Store, error) {
 	}
 
 	store := &Store{db: db}
-	if err := store.migrate(); err != nil {
+	if err := store.initialize(options); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -267,7 +282,7 @@ func New(dir string) (*Store, error) {
 // OpenPostgres creates a Store backed by a PostgreSQL database. It enables
 // horizontally scaled gateway replicas to share keys, logs, budgets, and
 // configuration. The DSN is a standard postgres:// connection string.
-func OpenPostgres(dsn string) (*Store, error) {
+func OpenPostgres(dsn string, options ...OpenOption) (*Store, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("postgres DSN is required")
 	}
@@ -277,7 +292,7 @@ func OpenPostgres(dsn string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(25)
 	store := &Store{db: db, pg: true}
-	if err := store.migrate(); err != nil {
+	if err := store.initialize(options); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
@@ -340,220 +355,24 @@ func (s *Store) queryRow(ctx context.Context, query string, args ...any) *sql.Ro
 	return s.db.QueryRowContext(ctx, query, args...)
 }
 
-func (s *Store) migrate() error {
-	migrations := []string{
-		`CREATE TABLE IF NOT EXISTS request_logs (
-			id TEXT PRIMARY KEY,
-			timestamp TEXT NOT NULL,
-			trace_id TEXT,
-			session_id TEXT,
-			provider TEXT,
-			model TEXT,
-			api_key_id TEXT,
-			status TEXT,
-			input_tokens INTEGER DEFAULT 0,
-			output_tokens INTEGER DEFAULT 0,
-			total_tokens INTEGER DEFAULT 0,
-			latency_ms REAL DEFAULT 0,
-			cost REAL DEFAULT 0,
-			request_body TEXT,
-			response_body TEXT,
-			decision TEXT,
-			decision_reason TEXT,
-			error_message TEXT,
-			cached INTEGER DEFAULT 0
-		)`,
-		`CREATE TABLE IF NOT EXISTS api_keys (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			key_hash TEXT UNIQUE NOT NULL,
-			key_prefix TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			expires_at TEXT,
-			rate_limit INTEGER DEFAULT 60,
-			budget_usd REAL DEFAULT 0,
-			spend_usd REAL DEFAULT 0,
-			monthly_cost_budget REAL DEFAULT 0,
-			monthly_token_budget INTEGER DEFAULT 0,
-			enabled INTEGER DEFAULT 1,
-			workspace_id TEXT,
-			role TEXT,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS prompts (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			version INTEGER DEFAULT 1,
-			template TEXT NOT NULL,
-			variables TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS guardrail_events (
-			id TEXT PRIMARY KEY,
-			request_id TEXT,
-			timestamp TEXT NOT NULL,
-			guardrail_type TEXT,
-			action TEXT,
-			matched INTEGER DEFAULT 0,
-			details TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS semantic_cache (
-			id TEXT PRIMARY KEY,
-			cache_key TEXT,
-			created_at TEXT NOT NULL,
-			expires_at TEXT,
-			model TEXT NOT NULL,
-			prompt_text TEXT NOT NULL,
-			vector_json TEXT NOT NULL,
-			response_json TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS shadow_requests (
-			id TEXT PRIMARY KEY,
-			request_id TEXT NOT NULL,
-			trace_id TEXT,
-			timestamp TEXT NOT NULL,
-			primary_provider TEXT,
-			shadow_provider TEXT,
-			model TEXT,
-			latency_ms REAL DEFAULT 0,
-			cost REAL DEFAULT 0,
-			status TEXT,
-			error_message TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS feedback (
-			id TEXT PRIMARY KEY,
-			request_id TEXT,
-			trace_id TEXT,
-			timestamp TEXT NOT NULL,
-			score INTEGER DEFAULT 0,
-			rating TEXT,
-			comment TEXT,
-			user_id TEXT,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS organizations (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS workspaces (
-			id TEXT PRIMARY KEY,
-			organization_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS users (
-			id TEXT PRIMARY KEY,
-			email TEXT UNIQUE NOT NULL,
-			name TEXT,
-			created_at TEXT NOT NULL,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS workspace_members (
-			workspace_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
-			role TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			PRIMARY KEY (workspace_id, user_id)
-		)`,
-		`CREATE TABLE IF NOT EXISTS virtual_keys (
-			id TEXT PRIMARY KEY,
-			name TEXT UNIQUE NOT NULL,
-			provider_type TEXT NOT NULL,
-			provider_name TEXT,
-			base_url TEXT,
-			encrypted_key TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			enabled INTEGER DEFAULT 1,
-			metadata TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS gateway_configs (
-			id TEXT PRIMARY KEY,
-			name TEXT UNIQUE NOT NULL,
-			description TEXT,
-			format TEXT NOT NULL DEFAULT 'yaml',
-			body TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			enabled INTEGER DEFAULT 1
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON request_logs(timestamp)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_trace ON request_logs(trace_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_session ON request_logs(session_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_api_key ON request_logs(api_key_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_provider ON request_logs(provider)`,
-		`CREATE INDEX IF NOT EXISTS idx_logs_status ON request_logs(status)`,
-		`CREATE INDEX IF NOT EXISTS idx_guardrail_request ON guardrail_events(request_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_cache_model ON semantic_cache(model)`,
-		`CREATE INDEX IF NOT EXISTS idx_shadow_request ON shadow_requests(request_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback(request_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_feedback_trace ON feedback(trace_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(organization_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_virtual_keys_name ON virtual_keys(name)`,
-		`CREATE INDEX IF NOT EXISTS idx_gateway_configs_name ON gateway_configs(name)`,
-	}
-
-	for _, m := range migrations {
-		if _, err := s.db.Exec(m); err != nil {
-			return fmt.Errorf("migration failed: %w", err)
-		}
-	}
-	if err := s.ensureColumn("request_logs", "trace_id", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("request_logs", "session_id", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("request_logs", "metadata", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("api_keys", "monthly_cost_budget", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("api_keys", "monthly_token_budget", "INTEGER DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("api_keys", "budget_usd", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("api_keys", "spend_usd", "REAL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("api_keys", "workspace_id", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("api_keys", "role", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("semantic_cache", "cache_key", "TEXT"); err != nil {
-		return err
-	}
-	if err := s.ensureColumn("semantic_cache", "expires_at", "TEXT"); err != nil {
-		return err
-	}
-	if _, err := s.db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_key ON semantic_cache(cache_key) WHERE cache_key IS NOT NULL AND cache_key != ''"); err != nil {
-		return fmt.Errorf("create cache key index: %w", err)
-	}
-	return nil
-}
-
 // InsertLog stores a request log entry.
 func (s *Store) InsertLog(ctx context.Context, log RequestLog) error {
+	if log.Endpoint == "" {
+		log.Endpoint = RequestEndpoint(ctx)
+	}
+	if log.CostSource == "" {
+		log.CostSource = "none"
+	}
 	_, err := s.exec(ctx,
 		`INSERT INTO request_logs (id, timestamp, trace_id, session_id, provider, model, api_key_id, status,
 			input_tokens, output_tokens, total_tokens, latency_ms, cost,
-			request_body, response_body, decision, decision_reason, error_message, cached, metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			request_body, response_body, decision, decision_reason, error_message, cached, metadata, endpoint, cost_source, cached_tokens, reasoning_tokens)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.ID, log.Timestamp.Format(time.RFC3339Nano), log.TraceID, log.SessionID, log.Provider, log.Model,
 		log.APIKeyID, log.Status, log.InputTokens, log.OutputTokens, log.TotalTokens,
 		log.LatencyMs, log.Cost, log.RequestBody, log.ResponseBody,
 		log.Decision, log.DecisionReason, log.ErrorMessage, boolToInt(log.Cached), log.Metadata,
+		log.Endpoint, log.CostSource, log.CachedTokens, log.ReasoningTokens,
 	)
 	return err
 }
@@ -591,7 +410,7 @@ func (s *Store) listLogs(ctx context.Context, limit, offset int, provider, statu
 	}
 
 	query := fmt.Sprintf(
-		"SELECT id, timestamp, trace_id, session_id, provider, model, api_key_id, status, input_tokens, output_tokens, total_tokens, latency_ms, cost, COALESCE(request_body, ''), COALESCE(response_body, ''), decision, decision_reason, error_message, cached, COALESCE(metadata, '') FROM request_logs WHERE %s ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+		"SELECT id, timestamp, trace_id, session_id, provider, model, api_key_id, status, input_tokens, output_tokens, total_tokens, latency_ms, cost, COALESCE(request_body, ''), COALESCE(response_body, ''), decision, decision_reason, error_message, cached, COALESCE(metadata, ''), endpoint, cost_source, cached_tokens, reasoning_tokens FROM request_logs WHERE %s ORDER BY timestamp DESC LIMIT ? OFFSET ?",
 		where,
 	)
 	args = append(args, limit, offset)
@@ -608,7 +427,7 @@ func (s *Store) listLogs(ctx context.Context, limit, offset int, provider, statu
 		var cached int
 		if err := rows.Scan(&l.ID, &ts, &l.TraceID, &l.SessionID, &l.Provider, &l.Model, &l.APIKeyID,
 			&l.Status, &l.InputTokens, &l.OutputTokens, &l.TotalTokens,
-			&l.LatencyMs, &l.Cost, &l.RequestBody, &l.ResponseBody, &l.Decision, &l.DecisionReason, &l.ErrorMessage, &cached, &l.Metadata); err != nil {
+			&l.LatencyMs, &l.Cost, &l.RequestBody, &l.ResponseBody, &l.Decision, &l.DecisionReason, &l.ErrorMessage, &cached, &l.Metadata, &l.Endpoint, &l.CostSource, &l.CachedTokens, &l.ReasoningTokens); err != nil {
 			return nil, 0, err
 		}
 		l.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
@@ -798,7 +617,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID, apiKeyID string) (TraceDe
 	rows, err := s.query(ctx,
 		fmt.Sprintf(`SELECT id, timestamp, trace_id, session_id, provider, model, api_key_id, status,
 			input_tokens, output_tokens, total_tokens, latency_ms, cost, COALESCE(request_body, ''),
-			COALESCE(response_body, ''), decision, decision_reason, error_message, cached, COALESCE(metadata, '')
+			COALESCE(response_body, ''), decision, decision_reason, error_message, cached, COALESCE(metadata, ''), endpoint, cost_source, cached_tokens, reasoning_tokens
 		FROM request_logs WHERE %s ORDER BY timestamp ASC`, where),
 		args...,
 	)
@@ -813,7 +632,7 @@ func (s *Store) GetTrace(ctx context.Context, traceID, apiKeyID string) (TraceDe
 		var cached int
 		if err := rows.Scan(&l.ID, &ts, &l.TraceID, &l.SessionID, &l.Provider, &l.Model, &l.APIKeyID,
 			&l.Status, &l.InputTokens, &l.OutputTokens, &l.TotalTokens, &l.LatencyMs, &l.Cost,
-			&l.RequestBody, &l.ResponseBody, &l.Decision, &l.DecisionReason, &l.ErrorMessage, &cached, &l.Metadata); err != nil {
+			&l.RequestBody, &l.ResponseBody, &l.Decision, &l.DecisionReason, &l.ErrorMessage, &cached, &l.Metadata, &l.Endpoint, &l.CostSource, &l.CachedTokens, &l.ReasoningTokens); err != nil {
 			return detail, err
 		}
 		l.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
@@ -952,14 +771,19 @@ func (s *Store) getProviderMetrics(ctx context.Context, since time.Time, apiKeyI
 // InsertAPIKey stores an API key.
 func (s *Store) InsertAPIKey(ctx context.Context, key APIKey) error {
 	meta, _ := json.Marshal(key.Metadata)
+	var lastUsedAt *string
+	if key.LastUsedAt != nil {
+		value := key.LastUsedAt.UTC().Format(time.RFC3339Nano)
+		lastUsedAt = &value
+	}
 	var expiresAt *string
 	if key.ExpiresAt != nil {
 		s := key.ExpiresAt.Format(time.RFC3339)
 		expiresAt = &s
 	}
 	_, err := s.exec(ctx,
-		`INSERT INTO api_keys (id, name, key_hash, key_prefix, created_at, expires_at, rate_limit, enabled, workspace_id, role, metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO api_keys (id, name, key_hash, key_prefix, created_at, expires_at, rate_limit, enabled, workspace_id, role, metadata, requests_per_minute, tokens_per_minute, usd_per_day, last_used_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			key_hash = excluded.key_hash,
@@ -969,10 +793,15 @@ func (s *Store) InsertAPIKey(ctx context.Context, key APIKey) error {
 			enabled = excluded.enabled,
 			workspace_id = excluded.workspace_id,
 			role = excluded.role,
-			metadata = excluded.metadata`,
+			metadata = excluded.metadata,
+			requests_per_minute = excluded.requests_per_minute,
+			tokens_per_minute = excluded.tokens_per_minute,
+			usd_per_day = excluded.usd_per_day,
+			last_used_at = COALESCE(excluded.last_used_at, api_keys.last_used_at)`,
 		key.ID, key.Name, key.KeyHash, key.KeyPrefix,
 		key.CreatedAt.Format(time.RFC3339), expiresAt,
 		key.RateLimit, boolToInt(key.Enabled), key.WorkspaceID, key.Role, string(meta),
+		key.RequestsPerMinute, key.TokensPerMinute, key.USDPerDay, lastUsedAt,
 	)
 	if err != nil {
 		return err
@@ -988,13 +817,13 @@ func (s *Store) InsertAPIKey(ctx context.Context, key APIKey) error {
 func (s *Store) GetAPIKeyByHash(ctx context.Context, hash string) (APIKey, error) {
 	var key APIKey
 	var createdAt, metaStr string
-	var expiresAt, workspaceID, role sql.NullString
+	var expiresAt, workspaceID, role, lastUsedAt sql.NullString
 	var enabled int
 
 	err := s.queryRow(ctx,
-		"SELECT id, name, key_hash, key_prefix, created_at, expires_at, rate_limit, budget_usd, spend_usd, monthly_cost_budget, monthly_token_budget, enabled, workspace_id, role, metadata FROM api_keys WHERE key_hash = ?",
+		"SELECT id, name, key_hash, key_prefix, created_at, expires_at, rate_limit, budget_usd, spend_usd, monthly_cost_budget, monthly_token_budget, enabled, workspace_id, role, metadata, requests_per_minute, tokens_per_minute, usd_per_day, last_used_at FROM api_keys WHERE key_hash = ?",
 		hash,
-	).Scan(&key.ID, &key.Name, &key.KeyHash, &key.KeyPrefix, &createdAt, &expiresAt, &key.RateLimit, &key.BudgetUSD, &key.SpendUSD, &key.MonthlyCostBudget, &key.MonthlyTokenBudget, &enabled, &workspaceID, &role, &metaStr)
+	).Scan(&key.ID, &key.Name, &key.KeyHash, &key.KeyPrefix, &createdAt, &expiresAt, &key.RateLimit, &key.BudgetUSD, &key.SpendUSD, &key.MonthlyCostBudget, &key.MonthlyTokenBudget, &enabled, &workspaceID, &role, &metaStr, &key.RequestsPerMinute, &key.TokensPerMinute, &key.USDPerDay, &lastUsedAt)
 	if err != nil {
 		return key, err
 	}
@@ -1003,6 +832,10 @@ func (s *Store) GetAPIKeyByHash(ctx context.Context, hash string) (APIKey, error
 	if expiresAt.Valid {
 		t, _ := time.Parse(time.RFC3339, expiresAt.String)
 		key.ExpiresAt = &t
+	}
+	if lastUsedAt.Valid {
+		t, _ := time.Parse(time.RFC3339Nano, lastUsedAt.String)
+		key.LastUsedAt = &t
 	}
 	key.WorkspaceID = nullableString(workspaceID)
 	key.Role = nullableString(role)
@@ -1014,7 +847,7 @@ func (s *Store) GetAPIKeyByHash(ctx context.Context, hash string) (APIKey, error
 // ListAPIKeys returns all API keys.
 func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
 	rows, err := s.query(ctx,
-		"SELECT id, name, key_prefix, created_at, expires_at, rate_limit, budget_usd, spend_usd, monthly_cost_budget, monthly_token_budget, enabled, workspace_id, role FROM api_keys ORDER BY created_at DESC")
+		"SELECT id, name, key_prefix, created_at, expires_at, rate_limit, budget_usd, spend_usd, monthly_cost_budget, monthly_token_budget, enabled, workspace_id, role, requests_per_minute, tokens_per_minute, usd_per_day, last_used_at FROM api_keys ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -1024,15 +857,19 @@ func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
 	for rows.Next() {
 		var k APIKey
 		var createdAt string
-		var expiresAt, workspaceID, role sql.NullString
+		var expiresAt, workspaceID, role, lastUsedAt sql.NullString
 		var enabled int
-		if err := rows.Scan(&k.ID, &k.Name, &k.KeyPrefix, &createdAt, &expiresAt, &k.RateLimit, &k.BudgetUSD, &k.SpendUSD, &k.MonthlyCostBudget, &k.MonthlyTokenBudget, &enabled, &workspaceID, &role); err != nil {
+		if err := rows.Scan(&k.ID, &k.Name, &k.KeyPrefix, &createdAt, &expiresAt, &k.RateLimit, &k.BudgetUSD, &k.SpendUSD, &k.MonthlyCostBudget, &k.MonthlyTokenBudget, &enabled, &workspaceID, &role, &k.RequestsPerMinute, &k.TokensPerMinute, &k.USDPerDay, &lastUsedAt); err != nil {
 			return nil, err
 		}
 		k.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		if expiresAt.Valid {
 			t, _ := time.Parse(time.RFC3339, expiresAt.String)
 			k.ExpiresAt = &t
+		}
+		if lastUsedAt.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, lastUsedAt.String)
+			k.LastUsedAt = &t
 		}
 		k.WorkspaceID = nullableString(workspaceID)
 		k.Role = nullableString(role)
@@ -1183,13 +1020,13 @@ func (s *Store) listGuardrailEventsForRequests(ctx context.Context, requestIDs [
 func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (APIKey, error) {
 	var key APIKey
 	var createdAt, metaStr string
-	var expiresAt, workspaceID, role sql.NullString
+	var expiresAt, workspaceID, role, lastUsedAt sql.NullString
 	var enabled int
 
 	err := s.queryRow(ctx,
-		"SELECT id, name, key_hash, key_prefix, created_at, expires_at, rate_limit, budget_usd, spend_usd, monthly_cost_budget, monthly_token_budget, enabled, workspace_id, role, metadata FROM api_keys WHERE id = ?",
+		"SELECT id, name, key_hash, key_prefix, created_at, expires_at, rate_limit, budget_usd, spend_usd, monthly_cost_budget, monthly_token_budget, enabled, workspace_id, role, metadata, requests_per_minute, tokens_per_minute, usd_per_day, last_used_at FROM api_keys WHERE id = ?",
 		id,
-	).Scan(&key.ID, &key.Name, &key.KeyHash, &key.KeyPrefix, &createdAt, &expiresAt, &key.RateLimit, &key.BudgetUSD, &key.SpendUSD, &key.MonthlyCostBudget, &key.MonthlyTokenBudget, &enabled, &workspaceID, &role, &metaStr)
+	).Scan(&key.ID, &key.Name, &key.KeyHash, &key.KeyPrefix, &createdAt, &expiresAt, &key.RateLimit, &key.BudgetUSD, &key.SpendUSD, &key.MonthlyCostBudget, &key.MonthlyTokenBudget, &enabled, &workspaceID, &role, &metaStr, &key.RequestsPerMinute, &key.TokensPerMinute, &key.USDPerDay, &lastUsedAt)
 	if err != nil {
 		return key, err
 	}
@@ -1199,11 +1036,22 @@ func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (APIKey, error) {
 		t, _ := time.Parse(time.RFC3339, expiresAt.String)
 		key.ExpiresAt = &t
 	}
+	if lastUsedAt.Valid {
+		t, _ := time.Parse(time.RFC3339Nano, lastUsedAt.String)
+		key.LastUsedAt = &t
+	}
 	key.WorkspaceID = nullableString(workspaceID)
 	key.Role = nullableString(role)
 	key.Enabled = enabled == 1
 	_ = json.Unmarshal([]byte(metaStr), &key.Metadata)
 	return key, nil
+}
+
+// TouchAPIKeyLastUsed updates a key's usage timestamp with one inexpensive write.
+// Callers should throttle it; authentication writes at most once per minute per key.
+func (s *Store) TouchAPIKeyLastUsed(ctx context.Context, id string, at time.Time) error {
+	_, err := s.exec(ctx, "UPDATE api_keys SET last_used_at = ? WHERE id = ?", at.UTC().Format(time.RFC3339Nano), id)
+	return err
 }
 
 func (s *Store) IncrementAPIKeySpend(ctx context.Context, id string, amount float64) error {
@@ -1774,60 +1622,6 @@ func (s *Store) DisableVirtualKey(ctx context.Context, name string) error {
 // Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
-}
-
-func (s *Store) ensureColumn(table, column, definition string) error {
-	var exists bool
-	var err error
-	if s.pg {
-		exists, err = s.pgColumnExists(table, column)
-	} else {
-		exists, err = s.sqliteColumnExists(table, column)
-	}
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
-		return fmt.Errorf("add column %s.%s: %w", table, column, err)
-	}
-	return nil
-}
-
-func (s *Store) sqliteColumnExists(table, column string) (bool, error) {
-	rows, err := s.db.Query("PRAGMA table_info(" + table + ")")
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name, columnType string
-		var notNull, pk int
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
-}
-
-func (s *Store) pgColumnExists(table, column string) (bool, error) {
-	row := s.db.QueryRow(`
-		SELECT COUNT(*) FROM information_schema.columns
-		WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`, table, column)
-	var count int
-	if err := row.Scan(&count); err != nil {
-		return false, err
-	}
-	return count > 0, nil
 }
 
 func boolToInt(b bool) int {
