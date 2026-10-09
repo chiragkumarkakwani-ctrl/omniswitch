@@ -204,6 +204,44 @@ providers:
     models: [gpt-4o]
 ```
 
+### Inference replicas (vLLM and Ollama)
+
+`type: inference` registers a local provider without an upstream API key.
+Use an OpenAI-compatible base URL ending in `/v1` for vLLM or Ollama. Each
+replica can advertise its own `models`; omitting them lets it accept any model
+when explicitly routed, but does not add entries to `/v1/models`.
+
+```yaml
+providers:
+  - name: local-inference
+    type: inference
+    health_interval: 10s
+    replicas:
+      - url: http://vllm:8000/v1
+        runtime: vllm
+        models: [Qwen/Qwen2.5-7B-Instruct]
+        priority: 0
+      - url: http://ollama:11434/v1
+        runtime: ollama
+        models: [llama3.2]
+        priority: 1
+routes:
+  local-chat:
+    variants:
+      - provider: local-inference
+        model: Qwen/Qwen2.5-7B-Instruct
+        weight: 1
+```
+
+Health probes run at startup and every `health_interval` (default `10s`,
+positive durations required), with a 3-second timeout. vLLM probes `/health`;
+Ollama probes `/api/tags`, relative to the base URL before `/v1`. A non-2xx
+response or network error marks a replica unhealthy. Model-compatible replicas
+are ranked by health, observed latency, queue length, and `priority` (lower
+values preferred). Probes stop during shutdown. `InferenceBackend.ReplicaHealth()`
+returns independent snapshots for the admin health API; `healthy` and
+`last_check` are null until the first probe finishes.
+
 ## Model catalog
 
 `/v1/models` and cost-based routing (the `cost-optimal` strategy) for OpenAI,
@@ -381,6 +419,25 @@ Distributed trace context propagates into `params._meta.traceparent`
 (SEP-414) on forwarded and OpenAPI-executed calls, so downstream MCP servers
 can continue the gateway's OTel trace. A2A is not an MCP target type; it is
 served separately through public Agent Card discovery and `/a2a` JSON-RPC.
+
+## A2A capabilities
+
+A2A is enabled at `/a2a` with public Agent Card discovery at
+`/.well-known/agent-card.json`. Canonical methods are `SendMessage`,
+`SendMessageStream`, `GetTask`, `CancelTask`, and `GetExtendedAgentCard`.
+There is no separate A2A config switch. `/api/config` reports:
+
+```json
+{"enabled":true,"streaming":true,"streaming_mode":"sse_task_events","task_lifecycle":true,"task_store":"in_memory","cancel":"best_effort","push_notifications":false,"methods":["SendMessage","SendMessageStream","GetTask","CancelTask","GetExtendedAgentCard"]}
+```
+
+SSE sends task status/artifact events, not token deltas. Tasks are in memory
+and are lost on restart (not shared across replicas). New tasks trigger pruning
+of records older than one hour.
+Cancellation is best effort: it updates state without aborting upstream
+inference, and completion can supersede the canceled state. No push
+notifications or downstream A2A proxy are implemented. The Agent Card uses
+camelCase capability qualifiers for the same boundaries.
 
 ## Provider Vault
 

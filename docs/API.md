@@ -120,10 +120,18 @@ by OpenAI-compatible clients. Provide the model with `metadata.model` or the
 Supported A2A methods:
 
 - `SendMessage`
+- `SendMessageStream` (SSE task status/artifact events, not token-by-token output)
+- `GetTask`
+- `CancelTask` (best effort)
 - `GetExtendedAgentCard`
 
-Task lifecycle methods, streaming, push notifications, and outbound A2A client
-calls are not yet implemented.
+Tasks are stored in memory and are lost on restart; they are
+not shared across gateway replicas. `SendMessageStream` emits a working status
+before inference and the response artifact after the chat call completes.
+`CancelTask` updates task state but does not abort the upstream inference call;
+completion can supersede that state. Push notifications and outbound A2A client
+calls are not supported. The Agent Card capability qualifiers and `/api/config`
+A2A block report these boundaries explicitly.
 
 ## Management API
 

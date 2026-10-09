@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -43,6 +44,25 @@ func (r *Registry) Register(p Provider) {
 	for _, m := range p.Models() {
 		r.models[m.ID] = name
 	}
+}
+
+// Close releases registered providers that own background work.
+func (r *Registry) Close() error {
+	r.mu.RLock()
+	providers := make([]Provider, 0, len(r.providers))
+	for _, p := range r.providers {
+		providers = append(providers, p)
+	}
+	r.mu.RUnlock()
+	var errs []error
+	for _, p := range providers {
+		if closer, ok := p.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Get returns the provider with the given name.

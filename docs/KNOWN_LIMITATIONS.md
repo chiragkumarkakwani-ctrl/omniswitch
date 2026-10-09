@@ -10,7 +10,7 @@ OmniSwitch is in public beta. This page lists limitations that are current, know
 ## API surface
 
 - **Responses API and Anthropic Messages API support a documented subset**, not full parity with the upstream vendor APIs. Structured outputs, some tool-use flows, and certain streaming edge cases may not be forwarded; unsupported fields are either translated on a best-effort basis or rejected rather than silently dropped where practical (see `CHANGELOG.md` for the passthrough-fidelity work).
-- **A2A (Agent-to-Agent) support covers the v1 task lifecycle** (create, poll, cancel) with SSE streaming for task updates. Push notifications and an outbound A2A client (OmniSwitch acting as an A2A caller rather than callee) are not implemented.
+- **A2A tasks are in memory** and lost on restart; they are not shared across replicas. `SendMessageStream` sends SSE task status and artifact events, not token-by-token output. `GetTask` provides lookup, and **`CancelTask` is best effort**: it changes task state but does not abort an upstream inference call, whose completion can supersede that state. **Push notifications are not supported**, nor is an outbound A2A client or downstream agent proxy.
 
 ## Identity and transport security
 

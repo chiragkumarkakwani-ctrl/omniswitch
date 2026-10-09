@@ -108,6 +108,7 @@ func runServe() {
 
 	// Initialize provider registry.
 	registry := buildProviderRegistry(settings, vaultManager)
+	defer registry.Close()
 
 	if len(registry.Names()) == 0 {
 		log.Println("WARNING: No provider API keys configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY.")

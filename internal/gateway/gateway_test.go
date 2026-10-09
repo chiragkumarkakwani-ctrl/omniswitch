@@ -282,7 +282,12 @@ func TestA2AAgentCardDiscovery(t *testing.T) {
 		t.Fatalf("ETag is empty, want cache validator")
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"name":"OmniSwitch AI Gateway"`, `"protocolBinding":"JSONRPC"`, `"url":"https://agent.example.test/a2a"`, `"extendedAgentCard":true`} {
+	for _, want := range []string{
+		`"name":"OmniSwitch AI Gateway"`, `"protocolBinding":"JSONRPC"`, `"url":"https://agent.example.test/a2a"`,
+		`"extendedAgentCard":true`, `"streaming":true`, `"streamingMode":"sse_task_events"`,
+		`"taskLifecycle":true`, `"taskStore":"in_memory"`, `"cancel":"best_effort"`, `"pushNotifications":false`,
+		`"methods":["SendMessage","SendMessageStream","GetTask","CancelTask","GetExtendedAgentCard"]`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("agent card body = %s, want %s", body, want)
 		}
