@@ -42,13 +42,13 @@ func TestDashboardAPIRoutes(t *testing.T) {
 		{name: "trace detail", path: "/api/traces/trace_1", wantStatus: http.StatusOK, wantBody: `"trace_id":"trace_1"`},
 		{name: "health", path: "/api/health", wantStatus: http.StatusOK, wantBody: `"status":"healthy"`},
 		{name: "static dashboard", path: "/", wantStatus: http.StatusOK, wantBody: "<title>OmniSwitch"},
-		{name: "playground route", path: "/playground", wantStatus: http.StatusOK, wantBody: `id="playground"`},
+		{name: "playground route", path: "/playground", wantStatus: http.StatusOK, wantBody: `data-console-shell="omniswitch"`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			PublicShell(mux).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d, body = %s", rec.Code, tt.wantStatus, rec.Body.String())
 			}

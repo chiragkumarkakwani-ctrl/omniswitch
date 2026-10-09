@@ -2,11 +2,9 @@ package dashboard
 
 import (
 	"crypto/rand"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,9 +15,6 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
-
-//go:embed static
-var staticFiles embed.FS
 
 // Handler serves the dashboard API and embedded web UI.
 type Handler struct {
@@ -48,15 +43,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/configs", h.configs)
 	mux.HandleFunc("/api/health", h.health)
 
-	// Serve embedded static files at root.
-	staticFS, _ := fs.Sub(staticFiles, "static")
-	fileServer := http.FileServer(http.FS(staticFS))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if isDashboardRoute(r.URL.Path) {
-			serveDashboardIndex(w, r)
-			return
-		}
-		fileServer.ServeHTTP(w, r)
+	// The data-free shell is mounted separately, ahead of authentication.
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]string{
+			"message": "not found", "type": "invalid_request_error", "code": "not_found",
+		}})
 	})
 }
 
@@ -320,32 +311,6 @@ func (h *Handler) rawConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"saved": true, "path": h.configPath})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func isDashboardRoute(path string) bool {
-	switch path {
-	case "/", "/overview", "/playground", "/logs", "/configs", "/guardrails", "/prompts", "/keys", "/providers":
-		return true
-	default:
-		return strings.HasPrefix(path, "/traces/")
-	}
-}
-
-func serveDashboardIndex(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	body, err := staticFiles.ReadFile("static/index.html")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
 	}
 }
 
