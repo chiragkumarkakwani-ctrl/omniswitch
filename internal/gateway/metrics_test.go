@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/dashboard"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
@@ -267,6 +268,62 @@ func TestMetricsConcurrentHTTPRequests(t *testing.T) {
 		`omniswitch_tokens_total{provider="test",model="test-model",direction="input"} 160`,
 		`omniswitch_cost_usd_total{provider="test",model="test-model"} 10`,
 	)
+}
+
+func TestMetricsShadowUsageDoesNotAddRequests(t *testing.T) {
+	st := newGatewayTestStore(t)
+	metrics := telemetry.NewMetrics()
+	registry := provider.NewRegistry()
+	registry.Register(metricGatewayProvider{gatewayProvider: gatewayProvider{name: "primary", model: "test-model"}})
+	registry.Register(metricGatewayProvider{gatewayProvider: gatewayProvider{name: "shadow", model: "shadow-model"}})
+	h := New(registry, router.New(registry), st, nil)
+	h.SetMetrics(metrics)
+	h.SetShadowProvider("shadow")
+
+	rec := httptest.NewRecorder()
+	h.MetricsMiddleware(http.HandlerFunc(h.ChatCompletions)).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(metricsChatBody)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	logs, total, err := st.ListLogs(context.Background(), 10, 0, "primary", "success")
+	if err != nil || total != 1 || len(logs) != 1 {
+		t.Fatalf("primary logs = %+v, total = %d, error = %v", logs, total, err)
+	}
+	// Shadow logs are persisted after the usage update, so observing the row
+	// also waits for the background metric update without racing request labels.
+	completed := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		shadowLogs, err := st.ListShadowLogs(context.Background(), logs[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(shadowLogs) == 1 {
+			if shadowLogs[0].Status != "success" {
+				t.Fatalf("shadow failed: %+v", shadowLogs[0])
+			}
+			completed = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !completed {
+		t.Fatal("shadow completion did not finish")
+	}
+	assertMetricSamples(t, metrics,
+		`omniswitch_requests_total{endpoint="chat_completions",provider="primary",model="test-model",status="success"} 1`,
+		`omniswitch_request_duration_seconds_count{endpoint="chat_completions",provider="primary"} 1`,
+		`omniswitch_tokens_total{provider="primary",model="test-model",direction="input"} 2`,
+		`omniswitch_cost_usd_total{provider="primary",model="test-model"} 0.125`,
+		`omniswitch_tokens_total{provider="shadow",model="test-model",direction="input"} 2`,
+		`omniswitch_tokens_total{provider="shadow",model="test-model",direction="output"} 3`,
+		`omniswitch_cost_usd_total{provider="shadow",model="test-model"} 0.125`)
+	var text strings.Builder
+	if err := metrics.WritePrometheus(&text); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(text.String(), `omniswitch_requests_total{endpoint="chat_completions",provider="shadow"`) || strings.Contains(text.String(), `omniswitch_request_duration_seconds_count{endpoint="chat_completions",provider="shadow"`) {
+		t.Fatal("shadow completion added logical request or duration samples")
+	}
 }
 
 type metricGatewayProvider struct {

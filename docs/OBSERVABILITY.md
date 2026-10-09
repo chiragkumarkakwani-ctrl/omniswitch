@@ -195,10 +195,12 @@ even when public access is configured. The read-only config summary exposes
   the returned model when known, otherwise the resolved/requested model.
 - `direction` is `input` or `output`. Usage and cost count each successful
   upstream completion, including ones later denied or retried by output
-  guardrails. One logical request is still counted once. Cache hits do not
-  increment upstream tokens or cost, and local moderation has no upstream
-  usage. Streaming token totals come from reported provider usage, not text
-  length estimates. Cost uses the gateway's current pricing estimator.
+  guardrails. Successful background shadow completions also add usage and cost,
+  but do not add logical request or duration samples. One logical request is
+  still counted once. Cache hits do not increment upstream tokens or cost, and
+  local moderation has no upstream usage. Streaming token totals come from
+  reported provider usage, not text length estimates. Cost uses the gateway's
+  current pricing estimator.
 - `type` and `action` are the triggered guardrail result's type and configured
   action. Metrics do not depend on audit persistence. Multiple choices or
   moderation inputs can trigger multiple events.

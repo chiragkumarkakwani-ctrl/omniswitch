@@ -980,6 +980,12 @@ func (h *Handler) shadow(ctx context.Context, activeRouter *router.Router, reque
 	if activeRouter == nil {
 		activeRouter = h.router
 	}
+	// Background completions report upstream usage without sharing mutable
+	// request labels or adding a second logical request.
+	var metrics *telemetry.Metrics
+	if observation := metricsObservation(ctx); observation != nil {
+		metrics = observation.registry
+	}
 	go func() {
 		shadowCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -992,6 +998,8 @@ func (h *Handler) shadow(ctx context.Context, activeRouter *router.Router, reque
 		if err != nil {
 			status = "error"
 			errMsg = err.Error()
+		} else if metrics != nil && !meta.Cached {
+			metrics.RecordUsage(meta.Provider, firstNonEmpty(resp.Model, meta.Model, req.Model), resp.Usage.PromptTokens, resp.Usage.CompletionTokens, meta.Cost)
 		}
 		if err := h.store.InsertShadowLog(context.Background(), store.ShadowLog{
 			ID:              newID("shadow"),
@@ -1008,8 +1016,6 @@ func (h *Handler) shadow(ctx context.Context, activeRouter *router.Router, reque
 		}); err != nil {
 			log.Printf("failed to log shadow request: %v", err)
 		}
-		_ = resp
-		_ = ctx
 	}()
 }
 
