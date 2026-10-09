@@ -22,14 +22,32 @@ import {
 import { formDialog, dialog } from "../components/dialog.js";
 const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 export async function playground(ctx) {
-  const [models, prompts, config] = await Promise.all([
+  const [models, prompts, config, savedConfigs] = await Promise.all([
     get("/v1/models", { signal: ctx.signal }),
     get("/api/prompts", { signal: ctx.signal }),
     get("/api/config", { signal: ctx.signal }),
+    get("/api/configs", { signal: ctx.signal }),
   ]);
   const canSend = hasRole("member"),
     model = select((models.data || []).map((m) => m.id)),
     provider = select([["", "Use configured route"], ...(config.providers?.names || [])], "");
+  const preset = select([
+    ["", "Use applied routing"],
+    ...(savedConfigs.configs || [])
+      .filter((item) => item.enabled)
+      .map((item) => [item.id, item.name]),
+  ]);
+  const systemPrompt = textarea({
+    rows: 3,
+    placeholder: "Optional system instructions",
+  });
+  const topP = input({
+    type: "number",
+    min: 0,
+    max: 1,
+    step: "any",
+    placeholder: "Upstream default",
+  });
   const temperature = input({
       type: "number",
       min: 0,
@@ -62,12 +80,23 @@ export async function playground(ctx) {
   const stats = h("div", { "aria-live": "polite" }),
     errors = h("div", { "aria-live": "polite" });
   let controller = null;
+  let requestGeneration = 0;
+  const routingHeaders = () => ({
+    ...(provider.value ? { "x-omniswitch-provider": provider.value } : {}),
+    ...(preset.value ? { "x-omniswitch-config": preset.value } : {}),
+    ...(session.value ? { "x-omniswitch-session-id": session.value } : {}),
+  });
   const requestBody = () => ({
     model: model.value,
-    messages: [...messages, { role: "user", content: composer.value }],
+    messages: [
+      ...(systemPrompt.value ? [{ role: "system", content: systemPrompt.value }] : []),
+      ...messages,
+      { role: "user", content: composer.value },
+    ],
     stream: stream.checked,
     ...(stream.checked ? { stream_options: { include_usage: true } } : {}),
     ...(temperature.value ? { temperature: Number(temperature.value) } : {}),
+    ...(topP.value ? { top_p: Number(topP.value) } : {}),
     ...(maximum.value ? { max_tokens: Number(maximum.value) } : {}),
   });
   const send = button("Send request", null, {
@@ -82,8 +111,9 @@ export async function playground(ctx) {
       '-H "Authorization: Bearer $OMNISWITCH_API_KEY"',
       "-H " + shellQuote("Content-Type: application/json"),
     ];
-    if (provider.value)
-      headers.push("-H " + shellQuote("x-omniswitch-provider: " + provider.value));
+    for (const [name, value] of Object.entries(routingHeaders())) {
+      headers.push("-H " + shellQuote(name + ": " + value));
+    }
     return (
       "curl " +
       shellQuote(location.origin + "/v1/chat/completions") +
@@ -113,8 +143,10 @@ export async function playground(ctx) {
         const body = requestBody(),
           message = composer.value;
         if (!message.trim()) return;
-        controller = new AbortController();
-        const abort = () => controller?.abort();
+        const generation = ++requestGeneration;
+        const requestController = new AbortController();
+        controller = requestController;
+        const abort = () => requestController.abort();
         ctx.signal.addEventListener("abort", abort, { once: true });
         send.disabled = true;
         stop.disabled = false;
@@ -128,18 +160,20 @@ export async function playground(ctx) {
         history.append(h("article", { class: "chat-message" }, note("Assistant"), output));
         let result;
         try {
-          const headers = {};
-          if (provider.value) headers["x-omniswitch-provider"] = provider.value;
-          if (session.value) headers["x-omniswitch-session-id"] = session.value;
           result = await chat(
             body,
-            { signal: controller.signal, headers, overrideKey: override.value || undefined },
+            {
+              signal: requestController.signal,
+              headers: routingHeaders(),
+              overrideKey: override.value || undefined,
+            },
             (chunk) => {
+              if (generation !== requestGeneration || ctx.signal.aborted) return;
               output.textContent += chunk;
               history.scrollTop = history.scrollHeight;
             },
           );
-          if (ctx.signal.aborted) return;
+          if (ctx.signal.aborted || generation !== requestGeneration) return;
           messages.push(
             { role: "user", content: message },
             { role: "assistant", content: result.text },
@@ -180,7 +214,7 @@ export async function playground(ctx) {
             }
           announce("Response completed.");
         } catch (error) {
-          if (ctx.signal.aborted) return;
+          if (ctx.signal.aborted || generation !== requestGeneration) return;
           errors.replaceChildren(
             error.name === "AbortError"
               ? notice("Stream stopped. The partial response is shown.")
@@ -189,14 +223,22 @@ export async function playground(ctx) {
           stats.replaceChildren(note("Request did not complete."));
         } finally {
           ctx.signal.removeEventListener("abort", abort);
-          controller = null;
-          override.value = "";
-          send.disabled = !canSend || !models.data?.length;
-          stop.disabled = true;
+          if (controller === requestController) {
+            controller = null;
+            override.value = "";
+            send.disabled = !canSend || !models.data?.length;
+            stop.disabled = true;
+          }
         }
       },
     },
-    h("div", { class: "form-row" }, field("Model", model), field("Provider override", provider)),
+    h(
+      "div",
+      { class: "form-row" },
+      field("Model", model),
+      field("Provider override", provider),
+      field("Saved routing config", preset, "Applies to this request, not the gateway config file."),
+    ),
     h(
       "details",
       { class: "advanced" },
@@ -204,7 +246,9 @@ export async function playground(ctx) {
       h(
         "div",
         { class: "form-row" },
+        field("System prompt · optional", systemPrompt),
         field("Temperature · optional", temperature),
+        field("Top P · optional", topP),
         field("Max output tokens · optional", maximum),
         field("Client session ID · optional", session),
         field(
@@ -223,7 +267,11 @@ export async function playground(ctx) {
       { class: "row" },
       copyButton(curl, "Copy as cURL"),
       button("Reset conversation", () => {
+        requestGeneration++;
         controller?.abort();
+        controller = null;
+        send.disabled = !canSend || !models.data?.length;
+        stop.disabled = true;
         messages.length = 0;
         composer.value = "";
         override.value = "";

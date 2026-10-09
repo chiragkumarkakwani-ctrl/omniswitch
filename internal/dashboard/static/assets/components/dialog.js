@@ -118,7 +118,7 @@ export function formDialog(title, fields, submit, options = {}) {
   modal = dialog(title, form, options);
   return modal;
 }
-export function revealKey(value) {
+export function revealKey(value, onClose) {
   let secret = value;
   const text = h("pre", { class: "code-panel key-secret", tabindex: "0" }, secret);
   const modal = dialog(
@@ -133,6 +133,7 @@ export function revealKey(value) {
       onClose: () => {
         secret = "";
         text.textContent = "";
+        onClose?.();
       },
     },
   );

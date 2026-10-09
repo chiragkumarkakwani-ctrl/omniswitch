@@ -137,7 +137,7 @@ export async function access(ctx) {
       async (values, modal) => {
         const created = await post("/api/keys", values, { signal: ctx.signal });
         modal.close();
-        revealKey(created.key);
+        revealKey(created.key, ctx.refresh);
         created.key = "";
       },
       {
