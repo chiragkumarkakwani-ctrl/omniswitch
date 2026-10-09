@@ -110,3 +110,64 @@ func mustJSON(t *testing.T, value any) []byte {
 	}
 	return raw
 }
+
+func TestMessagesStreamStartsInterleavedCallsInContiguousOrder(t *testing.T) {
+	stream := NewMessagesStream("m")
+	payloads := []string{
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"f"}},{"index":1,"id":"b","function":{"name":"g"}}]}}]}`,
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{}"}}]}}]}`,
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}`,
+		`[DONE]`,
+	}
+	var starts []int
+	for _, payload := range payloads {
+		events, err := stream.Translate(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range events {
+			if event.Event == "content_block_start" {
+				starts = append(starts, event.Data.(map[string]any)["index"].(int))
+			}
+		}
+	}
+	if len(starts) != 2 || starts[0] != 0 || starts[1] != 1 {
+		t.Fatalf("start indices = %v", starts)
+	}
+}
+
+func TestMessagesStreamHoldsLaterBlocksForMissingToolMetadata(t *testing.T) {
+	stream := NewMessagesStream("m")
+	if _, err := stream.Translate(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}`); err != nil {
+		t.Fatal(err)
+	}
+	events, err := stream.Translate(`{"choices":[{"index":0,"delta":{"content":"later text"}}]}`)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("must hold later text: %v %v", events, err)
+	}
+	events, err = stream.Translate(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"f"}}]}}]}`)
+	if err != nil || len(events) != 4 || events[0].Event != "content_block_start" || events[2].Event != "content_block_start" {
+		t.Fatalf("release = %v %v", events, err)
+	}
+	if _, err := stream.Translate("[DONE]"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResponsesStreamTerminalFailure(t *testing.T) {
+	stream := NewResponsesStream(ResponsesRequest{Model: "m"})
+	events := stream.Fail("upstream stream failed")
+	if len(events) != 3 || events[2].Event != "response.failed" || events[2].Data.(map[string]any)["sequence_number"] != 2 {
+		t.Fatalf("failure = %v", events)
+	}
+	response := events[2].Data.(map[string]any)["response"].(Response)
+	if response.Status != "failed" || response.Error.(map[string]string)["message"] != "upstream stream failed" {
+		t.Fatalf("response = %+v", response)
+	}
+	if len(stream.Fail("again")) != 0 {
+		t.Fatal("must be terminal")
+	}
+	if events, err := stream.Translate("[DONE]"); err != nil || len(events) != 0 {
+		t.Fatal("must not complete after failure")
+	}
+}

@@ -77,10 +77,10 @@ func (t *MessagesStream) Translate(payload string) ([]Event, error) {
 		if choice.Delta.Content != "" {
 			if t.textIndex < 0 {
 				t.textIndex = len(t.blocks)
-				t.blocks = append(t.blocks, &messageStreamBlock{index: t.textIndex, started: true})
-				events = append(events, namedEvent("content_block_start", map[string]any{"index": t.textIndex, "content_block": map[string]string{"type": "text", "text": ""}}))
+				t.blocks = append(t.blocks, &messageStreamBlock{index: t.textIndex})
 			}
-			events = append(events, namedEvent("content_block_delta", map[string]any{"index": t.textIndex, "delta": map[string]string{"type": "text_delta", "text": choice.Delta.Content}}))
+			t.blocks[t.textIndex].pending += choice.Delta.Content
+			events = append(events, t.flushPending()...)
 		}
 		for position, delta := range choice.Delta.ToolCalls {
 			callIndex := position
@@ -102,19 +102,46 @@ func (t *MessagesStream) Translate(payload string) ([]Event, error) {
 			block.name += delta.Function.Name
 			block.arguments += delta.Function.Arguments
 			block.pending += delta.Function.Arguments
-			// Wait for arguments to start so fragmented function names can be
-			// assembled before the immutable content_block_start is sent.
-			if !block.started && block.pending != "" && block.id != "" && block.name != "" {
-				block.started = true
-				events = append(events, namedEvent("content_block_start", map[string]any{"index": block.index, "content_block": MessageBlock{Type: "tool_use", ID: block.id, Name: block.name, Input: map[string]any{}}}))
-			}
-			if block.started && block.pending != "" {
-				events = append(events, namedEvent("content_block_delta", map[string]any{"index": block.index, "delta": map[string]string{"type": "input_json_delta", "partial_json": block.pending}}))
-				block.pending = ""
-			}
+			events = append(events, t.flushPending()...)
 		}
 	}
 	return events, nil
+}
+
+// Start blocks in contiguous index order even if call 1 emits arguments
+// before call 0. SDKs append new blocks and then address deltas by index.
+// Incomplete metadata holds later blocks; it never fabricates a tool id/name.
+func (t *MessagesStream) flushPending() []Event {
+	last := -1
+	for _, block := range t.blocks {
+		if block.pending != "" {
+			last = block.index
+		}
+	}
+	var events []Event
+	for index := 0; index <= last; index++ {
+		block := t.blocks[index]
+		if !block.started {
+			if block.tool {
+				if block.id == "" || block.name == "" {
+					break
+				}
+				events = append(events, namedEvent("content_block_start", map[string]any{"index": index, "content_block": MessageBlock{Type: "tool_use", ID: block.id, Name: block.name, Input: map[string]any{}}}))
+			} else {
+				events = append(events, namedEvent("content_block_start", map[string]any{"index": index, "content_block": map[string]string{"type": "text", "text": ""}}))
+			}
+			block.started = true
+		}
+		if block.pending != "" {
+			delta := map[string]string{"type": "text_delta", "text": block.pending}
+			if block.tool {
+				delta = map[string]string{"type": "input_json_delta", "partial_json": block.pending}
+			}
+			events = append(events, namedEvent("content_block_delta", map[string]any{"index": index, "delta": delta}))
+			block.pending = ""
+		}
+	}
+	return events
 }
 
 func (t *MessagesStream) finish() ([]Event, error) {
@@ -134,6 +161,7 @@ func (t *MessagesStream) finish() ([]Event, error) {
 		}
 	}
 	events := t.start(provider.ChatResponseChunk{})
+	events = append(events, t.flushPending()...)
 	t.completed = true
 	for _, block := range t.blocks {
 		events = append(events, namedEvent("content_block_stop", map[string]any{"index": block.index}))

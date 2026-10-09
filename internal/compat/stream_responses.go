@@ -154,3 +154,16 @@ func (t *ResponsesStream) finish() []Event {
 	events = append(events, t.event("response."+t.response.Status, map[string]any{"response": t.response}))
 	return events
 }
+
+// Fail closes an open Responses stream with a numbered terminal failure.
+func (t *ResponsesStream) Fail(message string) []Event {
+	if t.completed {
+		return nil
+	}
+	events := t.start(provider.ChatResponseChunk{})
+	t.completed = true
+	t.response.Status = "failed"
+	t.response.Error = map[string]string{"code": "server_error", "message": message}
+	events = append(events, t.event("response.failed", map[string]any{"response": t.response}))
+	return events
+}
