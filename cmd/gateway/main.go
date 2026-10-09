@@ -180,10 +180,10 @@ func runServe() {
 	// Print startup banner.
 	fmt.Println(banner())
 	log.Printf("OmniSwitch AI Gateway listening on %s", settings.listenAddr)
-	log.Printf("Dashboard: http://localhost%s", settings.listenAddr)
-	log.Printf("Gateway:   http://localhost%s/v1/chat/completions", settings.listenAddr)
+	log.Printf("Dashboard: %s", gatewayLocalURL(settings.listenAddr, ""))
+	log.Printf("Gateway:   %s", gatewayLocalURL(settings.listenAddr, "/v1/chat/completions"))
 	if settings.mcpEnabled {
-		log.Printf("MCP:       http://localhost%s/mcp", settings.listenAddr)
+		log.Printf("MCP:       %s", gatewayLocalURL(settings.listenAddr, "/mcp"))
 	}
 	log.Printf("Providers: %v", registry.Names())
 
