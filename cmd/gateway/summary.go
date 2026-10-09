@@ -1,10 +1,12 @@
 package main
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/omniswitch-dev/omniswitch/internal/gateway"
+	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
@@ -193,6 +195,17 @@ func routeSummaries(routes map[string]router.Route) []map[string]any {
 	return summaries
 }
 
+func mcpTokenExchangeSummary(config *gatewayconfig.MCPTokenExchange) map[string]any {
+	host, audience := "", ""
+	if config != nil {
+		if parsed, err := url.Parse(config.TokenURL); err == nil {
+			host = parsed.Hostname()
+		}
+		audience = config.Audience
+	}
+	return map[string]any{"configured": config != nil, "token_url_host": host, "audience": audience}
+}
+
 func mcpTargetSummaries(settings runtimeSettings) []map[string]any {
 	if len(settings.mcpTargets) == 0 {
 		if strings.TrimSpace(settings.mcpUpstreamURL) == "" {
@@ -206,6 +219,7 @@ func mcpTargetSummaries(settings runtimeSettings) []map[string]any {
 			"headers_configured":     false,
 			"environment_configured": false,
 			"forward_bearer_token":   false,
+			"token_exchange":         mcpTokenExchangeSummary(nil),
 		}}
 	}
 	summaries := make([]map[string]any, 0, len(settings.mcpTargets))
@@ -230,6 +244,7 @@ func mcpTargetSummaries(settings runtimeSettings) []map[string]any {
 			"headers_configured":     len(target.Headers) > 0,
 			"environment_configured": len(target.Environment) > 0,
 			"forward_bearer_token":   forwardBearer,
+			"token_exchange":         mcpTokenExchangeSummary(target.TokenExchange),
 		})
 	}
 	return summaries

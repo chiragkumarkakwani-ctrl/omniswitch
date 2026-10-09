@@ -41,8 +41,11 @@ func (h *Handler) upstreamToolList(ctx context.Context, target target, body []by
 		return nil, err
 	}
 	delegatedToken := ""
-	if target.forwardBearerToken || target.tokenExchange != nil {
+	if target.forwardBearerToken {
 		delegatedToken = headers.Get("Authorization")
+	}
+	if target.tokenExchange != nil {
+		delegatedToken = extractSubjectTokenFromContext(ctx)
 	}
 	key := sha256.Sum256([]byte(strings.Join([]string{
 		string(request.Params), headers.Get("Mcp-Session-Id"), headers.Get("Mcp-Protocol-Version"), delegatedToken,

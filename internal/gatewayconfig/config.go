@@ -188,6 +188,7 @@ type MCPTarget struct {
 	Policy             string            `json:"policy,omitempty" yaml:"policy,omitempty"`
 	Headers            map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	ForwardBearerToken *bool             `json:"forward_bearer_token,omitempty" yaml:"forward_bearer_token,omitempty"`
+	TokenExchange      *MCPTokenExchange `json:"token_exchange,omitempty" yaml:"token_exchange,omitempty"`
 	OpenAPISpec        string            `json:"openapi_spec,omitempty" yaml:"openapi_spec,omitempty"`
 	Enabled            *bool             `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
@@ -423,6 +424,17 @@ func Validate(cfg Config) error {
 			}
 		default:
 			return fmt.Errorf("mcp.targets[%d].transport must be http, streamable_http, or stdio", i)
+		}
+		if target.TokenExchange != nil {
+			if target.ForwardBearerToken != nil && *target.ForwardBearerToken {
+				return fmt.Errorf("mcp.targets[%d]: token_exchange and forward_bearer_token cannot be combined", i)
+			}
+			if strings.EqualFold(strings.TrimSpace(target.Transport), "stdio") {
+				return fmt.Errorf("mcp.targets[%d].token_exchange requires HTTP transport", i)
+			}
+			if err := validateMCPTokenExchange(*target.TokenExchange); err != nil {
+				return fmt.Errorf("mcp.targets[%d].token_exchange: %w", i, err)
+			}
 		}
 	}
 	for i, rule := range cfg.Guardrails.Rules {

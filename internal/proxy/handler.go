@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/adapter/mcp"
@@ -41,7 +40,7 @@ type TargetConfig struct {
 
 	// TokenExchange configures RFC 8693 token exchange for this target.
 	// When configured, incoming tokens are exchanged for target-specific tokens
-	// using RFC 8693 with RFC 7523 JWT Bearer Grant.
+	// and an authenticated subject token.
 	TokenExchange *TokenExchangeConfig
 }
 
@@ -54,7 +53,7 @@ type TokenExchangeConfig struct {
 	ClientID string `json:"client_id" yaml:"client_id"`
 
 	// ClientSecret is the OAuth client secret for the token exchange.
-	ClientSecret string `json:"client_secret" yaml:"client_secret"`
+	ClientSecret string `json:"-" yaml:"-"`
 
 	// SubjectTokenType is the type of the subject token being exchanged.
 	// Defaults to "urn:ietf:params:oauth:token-type:access_token".
@@ -71,7 +70,7 @@ type TokenExchangeConfig struct {
 	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
 
 	// ActorToken is an optional actor token for On-Behalf-Of flow.
-	ActorToken string `json:"actor_token,omitempty" yaml:"actor_token,omitempty"`
+	ActorToken string `json:"-" yaml:"-"`
 
 	// ActorTokenType is the type of the actor token.
 	// Defaults to "urn:ietf:params:oauth:token-type:access_token".
@@ -96,23 +95,6 @@ type target struct {
 	tokenCache         *tokenCache
 	toolsCache         *toolListCache
 }
-
-type tokenCache struct {
-	mu           sync.Mutex
-	accessToken  string
-	expiresAt    time.Time
-	actorToken   string
-	actorExpires time.Time
-}
-
-type tokenCacheEntry struct {
-	accessToken  string
-	expiresAt    time.Time
-	actorToken   string
-	actorExpires time.Time
-}
-
-var tokenCacheMap sync.Map // key: target name -> *tokenCacheEntry
 
 type Handler struct {
 	engine      policy.Engine
@@ -192,8 +174,13 @@ func NewMultiHandler(engine policy.Engine, auditor audit.Logger, configs []Targe
 			log.Printf("MCP target %q exposes %d OpenAPI-derived tools", name, len(tools))
 		}
 
-		// Configure token exchange if enabled
 		if config.TokenExchange != nil {
+			if config.ForwardBearerToken {
+				return nil, fmt.Errorf("MCP target %q cannot combine token exchange and bearer forwarding", name)
+			}
+			if transport == "stdio" {
+				return nil, fmt.Errorf("MCP target %q token exchange requires HTTP transport", name)
+			}
 			configuredTarget.tokenExchange = config.TokenExchange
 			configuredTarget.tokenCache = &tokenCache{}
 		}
@@ -218,6 +205,9 @@ func (h *Handler) Close() {
 		}
 		if target.toolsCache != nil {
 			target.toolsCache.invalidate()
+		}
+		if target.tokenCache != nil {
+			target.tokenCache.invalidate()
 		}
 	}
 }
@@ -427,6 +417,9 @@ func (h *Handler) targetRequest(ctx context.Context, target target, body []byte,
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for key, value := range target.headers {
+		req.Header.Set(key, value)
+	}
 	for _, key := range []string{"Accept", "Mcp-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"} {
 		if value := incoming.Get(key); value != "" {
 			req.Header.Set(key, value)
@@ -452,9 +445,6 @@ func (h *Handler) targetRequest(ctx context.Context, target target, body []byte,
 		}
 	}
 
-	for key, value := range target.headers {
-		req.Header.Set(key, value)
-	}
 	response, err := h.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -545,138 +535,6 @@ func injectTraceMeta(ctx context.Context, body []byte) []byte {
 		return body
 	}
 	return out
-}
-
-// extractSubjectTokenFromContext extracts the bearer token from the request context.
-func extractSubjectTokenFromContext(ctx context.Context) string {
-	if auth := ctx.Value("authorization"); auth != nil {
-		if authStr, ok := auth.(string); ok {
-			if strings.HasPrefix(authStr, "Bearer ") {
-				return strings.TrimPrefix(authStr, "Bearer ")
-			}
-		}
-	}
-	return ""
-}
-
-// getOrExchangeToken retrieves a cached token or performs RFC 8693 token exchange
-// using RFC 7523 JWT Bearer Grant. Supports On-Behalf-Of flow via actor_token.
-func (h *Handler) getExchangeToken(ctx context.Context, target target) (string, error) {
-	if target.tokenExchange == nil {
-		return "", nil
-	}
-
-	te := target.tokenExchange
-
-	// Check cache first
-	if entry, ok := tokenCacheMap.Load(target.name); ok {
-		if entry, ok := entry.(*tokenCacheEntry); ok {
-			if time.Now().Before(entry.expiresAt) {
-				return entry.accessToken, nil
-			}
-		}
-	}
-
-	// Prepare token exchange request
-	subjectToken := extractSubjectTokenFromContext(ctx)
-	if subjectToken == "" {
-		return "", nil // No subject token available
-	}
-
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange")
-	form.Set("subject_token", subjectToken)
-
-	subjectTokenType := te.SubjectTokenType
-	if subjectTokenType == "" {
-		subjectTokenType = "urn:ietf:params:oauth:token-type:access_token"
-	}
-	form.Set("subject_token_type", subjectTokenType)
-
-	requestedTokenType := te.RequestedTokenType
-	if requestedTokenType == "" {
-		requestedTokenType = "urn:ietf:params:oauth:token-type:access_token"
-	}
-	form.Set("requested_token_type", requestedTokenType)
-
-	if te.Scope != "" {
-		form.Set("scope", te.Scope)
-	}
-
-	if te.Audience != "" {
-		form.Set("audience", te.Audience)
-	}
-
-	if te.Resource != "" {
-		form.Set("resource", te.Resource)
-	}
-
-	if te.ActorToken != "" {
-		form.Set("actor_token", te.ActorToken)
-		actorTokenType := te.ActorTokenType
-		if actorTokenType == "" {
-			actorTokenType = "urn:ietf:params:oauth:token-type:access_token"
-		}
-		form.Set("actor_token_type", actorTokenType)
-	}
-
-	form.Set("client_id", te.ClientID)
-	form.Set("client_secret", te.ClientSecret)
-
-	// Create token exchange request
-	tokenReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, te.TokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	tokenReq.Header.Set("Accept", "application/json")
-
-	resp, err := h.client.Do(tokenReq)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("token exchange failed: %s - %s", resp.Status, string(body))
-	}
-
-	var tokenResp struct {
-		AccessToken  string `json:"access_token"`
-		TokenType    string `json:"token_type"`
-		ExpiresIn    int    `json:"expires_in"`
-		IssuedToken  string `json:"issued_token"`
-		RefreshToken string `json:"refresh_token"`
-		Scope        string `json:"scope"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", err
-	}
-
-	accessToken := tokenResp.AccessToken
-	if accessToken == "" {
-		accessToken = tokenResp.IssuedToken
-	}
-	if accessToken == "" {
-		return "", fmt.Errorf("no access token in response")
-	}
-
-	expiresIn := tokenResp.ExpiresIn
-	if expiresIn <= 0 {
-		expiresIn = 3600 // default 1 hour
-	}
-	expiresAt := time.Now().Add(time.Duration(expiresIn-60) * time.Second) // 1 min buffer
-
-	// Cache the token
-	cacheEntry := &tokenCacheEntry{
-		accessToken: accessToken,
-		expiresAt:   expiresAt,
-	}
-	tokenCacheMap.Store(target.name, cacheEntry)
-
-	return accessToken, nil
 }
 
 func cloneHeaders(source map[string]string) map[string]string {

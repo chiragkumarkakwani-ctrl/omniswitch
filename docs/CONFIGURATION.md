@@ -349,8 +349,8 @@ unavailable webhook as a guardrail trigger, while `true` ignores its failure.
 ## MCP Targets
 
 See [MCP policy semantics and discovery filtering](MCP.md) for per-tool
-visibility and call enforcement, bare-name matching, audit counts, and the
-30-second discovery cache.
+visibility and call enforcement, bare-name matching, audit counts, the
+30-second discovery cache, and a worked beta RFC 8693 token exchange example.
 
 The legacy `upstream` is a default HTTP MCP upstream. `targets` adds federated
 HTTP MCP servers. `tools/list` combines allowed target tools under stable
@@ -362,6 +362,33 @@ endpoint. Set `forward_bearer_token: true` only for targets that require
 OAuth/OIDC delegation: it forwards the authenticated OIDC bearer token and
 never forwards a local OmniSwitch API key. Stdio targets use a persistent
 newline-delimited JSON-RPC child process and serialize calls per target.
+
+### Token exchange fields (beta)
+
+`mcp.targets[].token_exchange` configures RFC 8693 delegation for an HTTP MCP
+target. It requires authenticated OIDC subjects and cannot be combined with
+`forward_bearer_token: true`. See [MCP token exchange](MCP.md#rfc-8693-token-exchange-beta)
+for secret injection, request flow, caching, and error handling.
+
+| Field | Requirement / default | Meaning |
+|-------|-----------------------|---------|
+| `mcp.targets[].token_exchange.token_url` | Required | HTTPS token endpoint; HTTP accepted for localhost/loopback testing. URL credentials and fragments are rejected. |
+| `mcp.targets[].token_exchange.client_id` | Required | OAuth client identifier authorized to exchange tokens. |
+| `mcp.targets[].token_exchange.client_secret_env` | Optional | Name of an environment variable containing the client secret; referenced variables must be nonempty at startup. Literal secrets are rejected. |
+| `mcp.targets[].token_exchange.subject_token_type` | `urn:ietf:params:oauth:token-type:access_token` | RFC 8693 subject token type; use the JWT type when required by the authorization server. |
+| `mcp.targets[].token_exchange.requested_token_type` | `urn:ietf:params:oauth:token-type:access_token` | Requested downstream token type. |
+| `mcp.targets[].token_exchange.scope` | Omitted | Space-separated scopes to request. |
+| `mcp.targets[].token_exchange.audience` | Omitted | Logical target audience. This value is included in the safe config summary. |
+| `mcp.targets[].token_exchange.resource` | Omitted | Target resource URI sent to the authorization server. |
+| `mcp.targets[].token_exchange.actor_token_env` | Optional | Name of an environment variable containing an actor token for delegated flows; referenced variables must be nonempty at startup. |
+| `mcp.targets[].token_exchange.actor_token_type` | `urn:ietf:params:oauth:token-type:access_token` when an actor is configured | Type of the actor token; setting this field requires `actor_token_env`. |
+
+The strict YAML/JSON parser rejects literal `client_secret` and `actor_token`
+fields. Environment references use the form `MCP_CLIENT_SECRET`, not `${...}`
+expansion. The config API returns `token_exchange.configured`,
+`token_exchange.token_url_host`, and `token_exchange.audience`, without secret
+values or the full token URL. MCP targets are startup configuration; restart the
+gateway after changing these fields.
 
 ### OpenAPI-to-MCP conversion
 
