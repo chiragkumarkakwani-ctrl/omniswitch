@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"embed"
 	"fmt"
@@ -20,8 +22,10 @@ const dashboardCSP = "default-src 'none'; script-src 'self'; style-src 'self'; i
 
 type dashboardAsset struct {
 	body        []byte
+	gzipBody    []byte
 	contentType string
 	etag        string
+	gzipETag    string
 }
 
 // PublicShell serves the data-free operator console ahead of the authenticated
@@ -54,8 +58,18 @@ func PublicShell(next http.Handler) http.Handler {
 		case ".svg":
 			contentType = "image/svg+xml"
 		}
+		// Keep both immutable representations. Compression is startup work, never
+		// request work, and each representation has its own cache validator.
+		compressed, compressErr := gzipAsset(body)
+		if compressErr != nil {
+			return compressErr
+		}
 		assets[strings.TrimPrefix(name, "static")] = dashboardAsset{
-			body: body, contentType: contentType, etag: fmt.Sprintf("\"%x\"", sha256.Sum256(body)),
+			body:        body,
+			gzipBody:    compressed,
+			contentType: contentType,
+			etag:        fmt.Sprintf("\"%x\"", sha256.Sum256(body)),
+			gzipETag:    fmt.Sprintf("\"%x-gzip\"", sha256.Sum256(compressed)),
 		}
 		return nil
 	})
@@ -97,17 +111,23 @@ func PublicShell(next http.Handler) http.Handler {
 			}
 			if asset, ok := assets[r.URL.Path]; ok {
 				dashboardHeaders(w)
+				body, etag := asset.body, asset.etag
+				w.Header().Add("Vary", "Accept-Encoding")
+				if acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
+					body, etag = asset.gzipBody, asset.gzipETag
+					w.Header().Set("Content-Encoding", "gzip")
+				}
 				w.Header().Set("Cache-Control", "no-cache")
-				w.Header().Set("ETag", asset.etag)
+				w.Header().Set("ETag", etag)
 				w.Header().Set("Content-Type", asset.contentType)
-				if matchesETag(r.Header.Get("If-None-Match"), asset.etag) {
+				if matchesETag(r.Header.Get("If-None-Match"), etag) {
 					w.WriteHeader(http.StatusNotModified)
 					return
 				}
-				w.Header().Set("Content-Length", strconv.Itoa(len(asset.body)))
+				w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 				w.WriteHeader(http.StatusOK)
 				if r.Method != http.MethodHead {
-					_, _ = w.Write(asset.body)
+					_, _ = w.Write(body)
 				}
 				return
 			}
@@ -167,4 +187,48 @@ func matchesETag(header, etag string) bool {
 		}
 	}
 	return false
+}
+
+// gzipAsset uses the same standard-library compression for serving and budgets.
+func gzipAsset(body []byte) ([]byte, error) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(body); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return compressed.Bytes(), nil
+}
+
+// An explicit gzip weight wins over a wildcard. Never send gzip when q=0,
+// malformed, or absent; clients without compression keep the readable source.
+func acceptsGzip(header string) bool {
+	wildcard := false
+	for _, entry := range strings.Split(header, ",") {
+		parts := strings.Split(entry, ";")
+		coding := strings.TrimSpace(parts[0])
+		if !strings.EqualFold(coding, "gzip") && coding != "*" {
+			continue
+		}
+		quality := 1.0
+		for _, parameter := range parts[1:] {
+			name, value, ok := strings.Cut(parameter, "=")
+			if !strings.EqualFold(strings.TrimSpace(name), "q") {
+				continue
+			}
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+			if !ok || err != nil || !(parsed >= 0 && parsed <= 1) {
+				quality = 0
+				break
+			}
+			quality = parsed
+		}
+		if strings.EqualFold(coding, "gzip") {
+			return quality > 0
+		}
+		wildcard = quality > 0
+	}
+	return wildcard
 }

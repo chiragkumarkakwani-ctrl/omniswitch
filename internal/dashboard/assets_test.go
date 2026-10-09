@@ -1,14 +1,18 @@
 package dashboard
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -99,6 +103,95 @@ func TestPublicShellAssetRevalidation(t *testing.T) {
 	}
 }
 
+func TestPublicShellAssetGzip(t *testing.T) {
+	handler := PublicShell(http.NotFoundHandler())
+	for _, route := range []string{"/assets/app.js", "/assets/app.css", "/assets/shield.svg"} {
+		t.Run(route, func(t *testing.T) {
+			identity := httptest.NewRecorder()
+			handler.ServeHTTP(identity, httptest.NewRequest(http.MethodGet, route, nil))
+			if identity.Header().Get("Vary") != "Accept-Encoding" || identity.Header().Get("Content-Encoding") != "" {
+				t.Fatal("identity response must vary by encoding without an encoding header")
+			}
+			request := httptest.NewRequest(http.MethodGet, route, nil)
+			request.Header.Add("Accept-Encoding", "br")
+			request.Header.Add("Accept-Encoding", "gzip")
+			compressed := httptest.NewRecorder()
+			handler.ServeHTTP(compressed, request)
+			assertDashboardHeaders(t, compressed)
+			if compressed.Code != http.StatusOK || compressed.Header().Get("Content-Encoding") != "gzip" || compressed.Header().Get("Vary") != "Accept-Encoding" {
+				t.Fatalf("gzip response: %d %v", compressed.Code, compressed.Header())
+			}
+			if compressed.Header().Get("Content-Type") != identity.Header().Get("Content-Type") || compressed.Header().Get("Content-Length") != strconv.Itoa(compressed.Body.Len()) {
+				t.Fatal("gzip content type or encoded content length is incorrect")
+			}
+			reader, err := gzip.NewReader(bytes.NewReader(compressed.Body.Bytes()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := io.ReadAll(reader)
+			if closeErr := reader.Close(); closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			if err != nil || !bytes.Equal(decoded, identity.Body.Bytes()) {
+				t.Fatalf("decoded gzip differs from readable source: %v", err)
+			}
+			gzipETag := compressed.Header().Get("ETag")
+			identityETag := identity.Header().Get("ETag")
+			sum := sha256.Sum256(compressed.Body.Bytes())
+			if gzipETag != `"`+hex.EncodeToString(sum[:])+`-gzip"` || gzipETag == identityETag {
+				t.Fatalf("gzip ETag = %q, identity ETag = %q", gzipETag, identityETag)
+			}
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				for _, encoding := range []string{"", "gzip"} {
+					etag := identityETag
+					otherETag := gzipETag
+					if encoding == "gzip" {
+						etag, otherETag = otherETag, etag
+					}
+					request := httptest.NewRequest(method, route, nil)
+					request.Header.Set("Accept-Encoding", encoding)
+					request.Header.Set("If-None-Match", "W/"+etag)
+					cached := httptest.NewRecorder()
+					handler.ServeHTTP(cached, request)
+					if cached.Code != http.StatusNotModified || cached.Body.Len() != 0 || cached.Header().Get("ETag") != etag || cached.Header().Get("Vary") != "Accept-Encoding" || cached.Header().Get("Content-Encoding") != encoding {
+						t.Fatalf("%s %s revalidation: %d %v", method, encoding, cached.Code, cached.Header())
+					}
+					request.Header.Set("If-None-Match", otherETag)
+					fresh := httptest.NewRecorder()
+					handler.ServeHTTP(fresh, request)
+					if fresh.Code != http.StatusOK || fresh.Header().Get("ETag") != etag {
+						t.Fatal("validator from the other encoding reused a representation")
+					}
+					if method == http.MethodHead && fresh.Body.Len() != 0 {
+						t.Fatal("gzip or identity HEAD returned a body")
+					}
+				}
+			}
+			request = httptest.NewRequest(http.MethodGet, route, nil)
+			request.Header.Set("Accept-Encoding", "gzip;q=0, *;q=1")
+			disabled := httptest.NewRecorder()
+			handler.ServeHTTP(disabled, request)
+			if disabled.Header().Get("Content-Encoding") != "" || !bytes.Equal(disabled.Body.Bytes(), identity.Body.Bytes()) {
+				t.Fatal("explicit gzip;q=0 must select the identity representation")
+			}
+		})
+	}
+}
+
+func TestAcceptsGzip(t *testing.T) {
+	for header, want := range map[string]bool{
+		"": false, "br, deflate": false, "gzip": true, "br, GZIP; q=0.5": true,
+		"gzip;q=0": false, "gzip;q=0, *;q=1": false, "*;q=1, gzip;q=0": false,
+		"*;q=0.5": true, "*;q=0": false, "gzip;q=1.1": false,
+		"gzip;q=-1": false, "gzip;q=no": false, "gzip;q=NaN": false,
+		"gzip;q": false, "gzip;q=0.001": true, "x-gzip": false,
+	} {
+		if got := acceptsGzip(header); got != want {
+			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
+		}
+	}
+}
+
 func TestPublicShellLegacyRedirects(t *testing.T) {
 	handler := PublicShell(http.NotFoundHandler())
 	for from, to := range map[string]string{
@@ -156,11 +249,11 @@ func TestEmbeddedConsoleConformance(t *testing.T) {
 	inlineStyle := regexp.MustCompile(`(?i)<style\b|\bstyle\s*=|\bon[a-z]+\s*=`)
 	unsafeJS := regexp.MustCompile(`\b(?:innerHTML|outerHTML|insertAdjacentHTML)\b|\bdocument\s*\.\s*write\s*\(|\beval\s*\(|\bnew\s+Function\b|\blocalStorage\b`)
 	externalURL := regexp.MustCompile(`(?i)https?://`)
-	imports := regexp.MustCompile(`\b(?:import|export)\s*(?:[^;"']*?\bfrom\s*)?["']([^"']+)["']`)
+	imports := regexp.MustCompile(`(?m)^\s*(?:import|export)\s+(?:[^;"']*?\bfrom\s*)?["']([^"']+)["']`)
 	dynamicImports := regexp.MustCompile(`\bimport\s*\(\s*["']([^"']+)["']\s*\)`)
 	htmlAssets := regexp.MustCompile(`\b(?:src|href)\s*=\s*["'](/assets/[^"']+)["']`)
-	bytesByExtension := make(map[string]int)
-	total, icons := 0, 0
+	gzipByExtension := make(map[string]int)
+	totalGzip, iconsGzip, totalRaw := 0, 0, 0
 	err := fs.WalkDir(staticFiles, "static", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -174,12 +267,22 @@ func TestEmbeddedConsoleConformance(t *testing.T) {
 		}
 		text := string(body)
 		extension := path.Ext(name)
-		bytesByExtension[extension] += len(body)
-		total += len(body)
-		if extension == ".svg" || path.Base(name) == "icons.js" {
-			icons += len(body)
+		compressed, compressErr := gzipAsset(body)
+		if compressErr != nil {
+			return compressErr
 		}
-		if inlineStyle.MatchString(text) {
+		gzipByExtension[extension] += len(compressed)
+		totalGzip += len(compressed)
+		totalRaw += len(body)
+		if extension == ".svg" || path.Base(name) == "icons.js" {
+			iconsGzip += len(compressed)
+		}
+		for lineNumber, line := range strings.Split(text, "\n") {
+			if len(line) > 120 {
+				t.Errorf("%s:%d has a long source line (%d bytes)", name, lineNumber+1, len(line))
+			}
+		}
+		if (extension == ".html" || extension == ".svg") && inlineStyle.MatchString(text) {
 			t.Errorf("%s has inline styles or event attributes", name)
 		}
 		if unsafeJS.MatchString(text) {
@@ -230,13 +333,22 @@ func TestEmbeddedConsoleConformance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for label, size := range map[string]int{"JS": bytesByExtension[".js"], "CSS": bytesByExtension[".css"], "HTML": bytesByExtension[".html"], "icons": icons, "total": total} {
+	// Sum independently compressed files, just as the asset handler serves them.
+	// This intentionally does not use one artificially efficient concatenated gzip.
+	for label, size := range map[string]int{
+		"JS": gzipByExtension[".js"], "CSS": gzipByExtension[".css"],
+		"HTML": gzipByExtension[".html"], "icons": iconsGzip, "total": totalGzip,
+	} {
 		budget := map[string]int{"JS": 90000, "CSS": 30000, "HTML": 5000, "icons": 10000, "total": 135000}[label]
 		if size > budget {
-			t.Errorf("%s budget exceeded: %d bytes > %d bytes", label, size, budget)
+			t.Errorf("%s gzip budget exceeded: %d bytes > %d bytes", label, size, budget)
 		}
-		t.Logf("%s: %d / %d uncompressed bytes", label, size, budget)
+		t.Logf("%s: %d / %d gzip bytes", label, size, budget)
 	}
+	if totalRaw > 450000 {
+		t.Errorf("uncompressed sanity cap exceeded: %d bytes > 450000 bytes", totalRaw)
+	}
+	t.Logf("total: %d / 450000 uncompressed bytes", totalRaw)
 }
 
 func assertDashboardHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
