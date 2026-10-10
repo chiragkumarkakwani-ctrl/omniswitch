@@ -321,12 +321,114 @@ They receive `method`, `path`, `model`, `api_key_id`, `workspace_id`,
 wins. When any `allow` rule exists, a request must also match at least one
 allow rule. This composes with the built-in role checks for the control plane.
 
-`rate_limit` controls the default request quota. Every API key can still set
-its own quota in the control plane. Without `redis_url`, the gateway uses a
-local sliding window, suitable for one replica. With Redis, OmniSwitch uses an
-atomic fixed-window counter shared by all replicas. The startup check fails
-closed by default if Redis cannot be reached; `fail_open: true` lets traffic
-continue if Redis later becomes unavailable.
+`rate_limit` retains the default request quota and adds token/spend policies.
+Every matching policy applies. Both the local backend and Redis use fixed
+windows aligned to the Unix epoch; local counters are process-local and reset
+on restart. Redis shares atomic counters between replicas using the same
+configuration/prefix. Redis failure returns 503 by default; `fail_open: true`
+explicitly permits traffic during an outage. The Redis connection URL/prefix
+are startup settings and are never returned with credentials in `/api/config`.
+
+```yaml
+rate_limit:
+  requests: 120
+  window: 1m
+  fail_open: false
+  policies:
+    - name: workspace-tokens
+      scope: workspace
+      unit: total_tokens
+      limit: 50000
+      window: 1m
+      match:
+        workspace_id: "team-*"
+        model: "gpt-*"
+      action: reject
+    - name: observed-spend
+      scope: global
+      unit: usd
+      limit: 10
+      window: 1d
+      action: log
+pricing:
+  overrides:
+    - provider: openai
+      model: gpt-4o-mini
+      input_per_million: 0.15
+      output_per_million: 0.60
+      cached_input_per_million: 0.075
+```
+
+Scopes are `key`, `workspace`, `organization`, `model`, or `global`. Units are
+`requests`, `input_tokens`, `output_tokens`, `total_tokens`, or `usd`. A policy
+needs a unique, nonreserved name, positive finite limit, and a window from
+1 second to 30 days (Go durations or a `d` suffix). Request/token limits must
+be integers. `match` is an object of optional ANDed globs; `*` and `?` match
+across slashes. The default action is `reject`; `log` counts and logs without
+rejecting. A positive key `requests_per_minute`, `tokens_per_minute`, or
+`usd_per_day` adds a key policy, alongside the legacy default request quota.
+Authentication reloads these key columns on each request.
+
+### Pricing overlays
+
+`pricing.catalog_file` optionally supplies JSON with the same `models` array
+shape as `internal/provider/catalog/models.json`. Relative paths are resolved
+beside the gateway config file. Embedded rows load first, file fields overlay
+by provider/model ID, and `pricing.overrides` apply last. Overrides accept a
+provider type or account name (with or without `@`). Explicit zero rates allow
+free internal inference; supply both ordinary token rates to avoid defaulting
+an omitted override rate to zero. Absent cached override rates preserve an
+existing catalog rate, or use ordinary input rates if none is known.
+
+File rows preserve unspecified embedded metadata. Inherited verification dates
+and URLs describe the embedded public-source check, not independent
+verification of an operator's changed rate. Operators should supply their own
+provenance when maintaining a file. Rows added only by an override have no
+invented public source/date. No live network pricing fetch occurs.
+
+Policies and pricing overlays reload with a valid gateway config file update;
+invalid policies, negative/nonfinite prices, or invalid/missing catalog files
+leave the active configuration unchanged. Removing those arrays clears them.
+If only an external pricing file changes, touch the gateway config file or
+restart. Some vendor rates have time/context tiers and request/search fees;
+see each row's notes and use an appropriate overlay. USD limits reconcile
+reported tokens against these estimated rates, not the vendor invoice.
+
+### Limits and pricing YAML fields
+
+All paths below are implemented and hot-reloaded on gateway config changes.
+List-element paths use `[]`; container paths are included for configuration
+documentation checks.
+
+| YAML path | Meaning |
+| --- | --- |
+| `rate_limit.policies` | Additional ordered policy list; empty removes explicit policies |
+| `rate_limit.policies[].name` | Unique policy name; implicit default/key names are reserved |
+| `rate_limit.policies[].scope` | Counter identity: key/workspace/organization/model/global |
+| `rate_limit.policies[].unit` | requests/input_tokens/output_tokens/total_tokens/usd |
+| `rate_limit.policies[].limit` | Positive finite ceiling; integer for request/token units |
+| `rate_limit.policies[].window` | Fixed duration, 1s–30d, including `d` suffix |
+| `rate_limit.policies[].match` | Optional ANDed selector object; omitted means all applicable identities |
+| `rate_limit.policies[].match.key_id` | Authenticated key ID glob |
+| `rate_limit.policies[].match.workspace_id` | Authenticated workspace ID glob |
+| `rate_limit.policies[].match.model` | Submitted model glob for requests; resolved upstream model for token/USD |
+| `rate_limit.policies[].action` | reject (default) or log |
+| `pricing` | Effective pricing overlays; empty restores embedded catalog |
+| `pricing.catalog_file` | Optional JSON file, relative to config directory or absolute |
+| `pricing.overrides` | Last-applied ordered rate overrides |
+| `pricing.overrides[].provider` | Provider type/account name |
+| `pricing.overrides[].model` | Upstream model ID, without gateway account prefix |
+| `pricing.overrides[].input_per_million` | Nonnegative finite USD per million input tokens; default 0 |
+| `pricing.overrides[].output_per_million` | Nonnegative finite USD per million output tokens; default 0 |
+| `pricing.overrides[].cached_input_per_million` | Optional nonnegative finite cache-read USD rate, including explicit 0 |
+
+`GET /api/config` reports live policies and `pricing.catalog_verified_on`,
+`catalog_file`, and override count. `GET /api/catalog` returns effective rows;
+`GET /api/limits/usage` reports own-key policy usage for viewer/member callers
+and permits admin/owner callers to select another key. Six OpenAI-style
+rate-limit headers are present on `/v1/*`; token/spend rejection is 429 while
+existing calendar-month budgets remain 402. See [LIMITS.md](LIMITS.md) for
+reservation, streaming, header, and backend behavior.
 
 ## OIDC Workload Identity
 
