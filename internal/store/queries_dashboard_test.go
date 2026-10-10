@@ -24,6 +24,7 @@ func TestDashboardQueries(t *testing.T) {
 			t.Run("guardrails_and_mcp", func(t *testing.T) { testDashboardEvents(t, newMigrationTestStore(t, dialect.postgres, true)) })
 			t.Run("keys_and_usage", func(t *testing.T) { testDashboardKeys(t, newMigrationTestStore(t, dialect.postgres, true)) })
 			t.Run("bounded_trace", func(t *testing.T) { testDashboardTrace(t, newMigrationTestStore(t, dialect.postgres, true)) })
+			t.Run("trace_row_caps", func(t *testing.T) { testDashboardTraceCaps(t, newMigrationTestStore(t, dialect.postgres, true)) })
 			t.Run("export_cap", func(t *testing.T) { testDashboardExportCap(t, newMigrationTestStore(t, dialect.postgres, true)) })
 		})
 	}
@@ -425,5 +426,30 @@ func TestDashboardConcurrentBootstrap(t *testing.T) {
 				t.Fatalf("stored bootstrap hash changed: %v", err)
 			}
 		})
+	}
+}
+
+func testDashboardTraceCaps(t *testing.T, st *Store) {
+	ctx := context.Background()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	stamp := base.Format(time.RFC3339Nano)
+	_, err := st.exec(ctx, `WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n < 501)
+		INSERT INTO request_logs (id, timestamp, trace_id, api_key_id, status, decision)
+		SELECT 'capped-' || CAST(n AS TEXT), ?, 'capped-trace', 'mine', 'success', 'ALLOW' FROM seq`, stamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{
+		`INSERT INTO guardrail_events (id, request_id, timestamp, guardrail_type, action, matched, details) SELECT 'event-' || CAST(n AS TEXT), 'capped-1', ?, 'regex', 'warn', 1, '' FROM seq`,
+		`INSERT INTO shadow_requests (id, request_id, trace_id, timestamp) SELECT 'shadow-' || CAST(n AS TEXT), 'capped-1', 'capped-trace', ? FROM seq`,
+		`INSERT INTO feedback (id, request_id, trace_id, timestamp) SELECT 'feedback-' || CAST(n AS TEXT), 'capped-1', 'capped-trace', ? FROM seq`,
+	} {
+		if _, err := st.exec(ctx, `WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n < 101) `+query, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err := st.GetTraceInRange(ctx, "capped-trace", "mine", base, base.Add(time.Second))
+	if err != nil || len(detail.Logs) != 500 || len(detail.GuardrailEvents) != 100 || len(detail.ShadowLogs) != 100 || len(detail.Feedback) != 100 {
+		t.Fatalf("trace row caps: logs=%d events=%d shadows=%d feedback=%d err=%v", len(detail.Logs), len(detail.GuardrailEvents), len(detail.ShadowLogs), len(detail.Feedback), err)
 	}
 }

@@ -135,6 +135,10 @@ func TestPersistedStreamingAttemptFinishesBeforeLog(t *testing.T) {
 }
 
 func TestRecorderBoundAndUnknownOIDCScope(t *testing.T) {
+	clean := metadataWithSpans(`{"_spans":[{"name":"fabricated"}],"_spans_truncated":true}`, nil, false)
+	if strings.Contains(clean, "_spans") {
+		t.Fatal("caller timings survived an empty measured recorder")
+	}
 	ctx := WithTraceRecorder(context.Background(), newTraceRecorder())
 	for i := 0; i < 300; i++ {
 		recordTraceSpan(ctx, "attempt", "p", "ok", time.Now(), nil)

@@ -91,3 +91,30 @@ func TestRouterRecordsEachAttemptBackoffAndFallback(t *testing.T) {
 		t.Fatalf("stages=%v attempts=%v fallback=%v", names, attempts, fallback)
 	}
 }
+
+func TestRecordedStreamCancellationClosesAfterErrorSpan(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	seen := make(chan struct{}, 1)
+	ctx = WithSpanRecorder(ctx, func(name, providerName, status string, start time.Time, metadata map[string]any) {
+		if name != "provider_attempt" || providerName != "primary" || status != "error" || metadata["error"] != context.Canceled.Error() || metadata["stream"] != true {
+			t.Errorf("cancelled stream span: %s/%s/%s/%v", name, providerName, status, metadata)
+		}
+		seen <- struct{}{}
+	})
+	chunks := make(chan provider.ChatResponseChunk)
+	out := recordStreamAttempt(ctx, chunks, cancel, time.Now(), "primary", "model", 0, false)
+	cancel()
+	select {
+	case _, open := <-out:
+		if open {
+			t.Fatal("cancelled stream did not close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled stream wrapper leaked")
+	}
+	select {
+	case <-seen:
+	default:
+		t.Fatal("stream closed before cancellation span was available")
+	}
+}

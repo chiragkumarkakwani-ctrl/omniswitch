@@ -158,6 +158,7 @@ func metadataWithSpans(metadataJSON string, spans []store.TraceSpan, truncated b
 	if err := json.Unmarshal([]byte(normalizedMetadataJSON(metadataJSON)), &metadata); err != nil {
 		metadata = map[string]any{}
 	}
+	delete(metadata, "_spans") // Caller metadata cannot supply measured stages.
 	if len(spans) > 0 {
 		metadata["_spans"] = spans
 	}
