@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestSQLiteBaselineAdoptionOnOpen(t *testing.T) {
@@ -22,7 +23,7 @@ func TestSQLiteBaselineAdoptionOnOpen(t *testing.T) {
 	}
 	defer st.Close()
 	assertLatestSchema(t, st)
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "")
+	logs, total, err := st.ListLogs(context.Background(), LogFilter{Since: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Limit: 10})
 	if err != nil || total != 1 || logs[0].RequestBody != "original prompt" {
 		t.Fatalf("baseline adoption changed data: logs=%+v, total=%d, err=%v", logs, total, err)
 	}

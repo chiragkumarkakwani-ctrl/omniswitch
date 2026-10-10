@@ -75,7 +75,7 @@ func testReleaseFields(t *testing.T, st *Store) {
 			t.Fatalf("log fields = %+v", got)
 		}
 	}
-	logs, _, err := st.ListLogs(ctx, 10, 0, "", "")
+	logs, _, err := st.ListLogs(ctx, LogFilter{Limit: 10, Offset: 0, Provider: ""})
 	assertLog(logs, err)
 	logs, _, err = st.ListLogsForAPIKey(ctx, key.ID, 10, 0, "", "")
 	assertLog(logs, err)

@@ -47,7 +47,7 @@ func TestStoreLogsAndMetrics(t *testing.T) {
 		}
 	}
 
-	got, total, err := st.ListLogs(ctx, 10, 0, "openai", "")
+	got, total, err := st.ListLogs(ctx, LogFilter{Limit: 10, Offset: 0, Provider: "openai"})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}

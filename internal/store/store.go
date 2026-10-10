@@ -368,73 +368,13 @@ func (s *Store) InsertLog(ctx context.Context, log RequestLog) error {
 			input_tokens, output_tokens, total_tokens, latency_ms, cost,
 			request_body, response_body, decision, decision_reason, error_message, cached, metadata, endpoint, cost_source, cached_tokens, reasoning_tokens)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		log.ID, log.Timestamp.Format(time.RFC3339Nano), log.TraceID, log.SessionID, log.Provider, log.Model,
+		log.ID, log.Timestamp.UTC().Format(time.RFC3339Nano), log.TraceID, log.SessionID, log.Provider, log.Model,
 		log.APIKeyID, log.Status, log.InputTokens, log.OutputTokens, log.TotalTokens,
 		log.LatencyMs, log.Cost, log.RequestBody, log.ResponseBody,
 		log.Decision, log.DecisionReason, log.ErrorMessage, boolToInt(log.Cached), log.Metadata,
 		log.Endpoint, log.CostSource, log.CachedTokens, log.ReasoningTokens,
 	)
 	return err
-}
-
-// ListLogs returns paginated request logs ordered by timestamp descending.
-func (s *Store) ListLogs(ctx context.Context, limit, offset int, provider, status string) ([]RequestLog, int, error) {
-	return s.listLogs(ctx, limit, offset, provider, status, "")
-}
-
-// ListLogsForAPIKey scopes dashboard access to the authenticated workload key.
-func (s *Store) ListLogsForAPIKey(ctx context.Context, apiKeyID string, limit, offset int, provider, status string) ([]RequestLog, int, error) {
-	return s.listLogs(ctx, limit, offset, provider, status, apiKeyID)
-}
-
-func (s *Store) listLogs(ctx context.Context, limit, offset int, provider, status, apiKeyID string) ([]RequestLog, int, error) {
-	where := "1=1"
-	args := []any{}
-	if apiKeyID != "" {
-		where += " AND api_key_id = ?"
-		args = append(args, apiKeyID)
-	}
-	if provider != "" {
-		where += " AND provider = ?"
-		args = append(args, provider)
-	}
-	if status != "" {
-		where += " AND status = ?"
-		args = append(args, status)
-	}
-
-	var total int
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM request_logs WHERE %s", where)
-	if err := s.queryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-
-	query := fmt.Sprintf(
-		"SELECT id, timestamp, trace_id, session_id, provider, model, api_key_id, status, input_tokens, output_tokens, total_tokens, latency_ms, cost, COALESCE(request_body, ''), COALESCE(response_body, ''), decision, decision_reason, error_message, cached, COALESCE(metadata, ''), endpoint, cost_source, cached_tokens, reasoning_tokens FROM request_logs WHERE %s ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-		where,
-	)
-	args = append(args, limit, offset)
-	rows, err := s.query(ctx, query, args...)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	var logs []RequestLog
-	for rows.Next() {
-		var l RequestLog
-		var ts string
-		var cached int
-		if err := rows.Scan(&l.ID, &ts, &l.TraceID, &l.SessionID, &l.Provider, &l.Model, &l.APIKeyID,
-			&l.Status, &l.InputTokens, &l.OutputTokens, &l.TotalTokens,
-			&l.LatencyMs, &l.Cost, &l.RequestBody, &l.ResponseBody, &l.Decision, &l.DecisionReason, &l.ErrorMessage, &cached, &l.Metadata, &l.Endpoint, &l.CostSource, &l.CachedTokens, &l.ReasoningTokens); err != nil {
-			return nil, 0, err
-		}
-		l.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
-		l.Cached = cached == 1
-		logs = append(logs, l)
-	}
-	return logs, total, rows.Err()
 }
 
 func (s *Store) UpsertGatewayConfig(ctx context.Context, record GatewayConfigRecord) error {
@@ -977,7 +917,7 @@ func (s *Store) InsertGuardrailEvent(ctx context.Context, e GuardrailEvent) erro
 	_, err := s.exec(ctx,
 		`INSERT INTO guardrail_events (id, request_id, timestamp, guardrail_type, action, matched, details)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.RequestID, e.Timestamp.Format(time.RFC3339Nano),
+		e.ID, e.RequestID, e.Timestamp.UTC().Format(time.RFC3339Nano),
 		e.Type, e.Action, boolToInt(e.Matched), e.Details,
 	)
 	return err
@@ -1197,7 +1137,7 @@ func (s *Store) InsertShadowLog(ctx context.Context, entry ShadowLog) error {
 		entry.ID,
 		entry.RequestID,
 		entry.TraceID,
-		entry.Timestamp.Format(time.RFC3339Nano),
+		entry.Timestamp.UTC().Format(time.RFC3339Nano),
 		entry.PrimaryProvider,
 		entry.ShadowProvider,
 		entry.Model,
@@ -1264,7 +1204,7 @@ func (s *Store) InsertFeedback(ctx context.Context, entry Feedback) error {
 		entry.ID,
 		entry.RequestID,
 		entry.TraceID,
-		entry.Timestamp.Format(time.RFC3339Nano),
+		entry.Timestamp.UTC().Format(time.RFC3339Nano),
 		entry.Score,
 		entry.Rating,
 		entry.Comment,
