@@ -78,7 +78,8 @@ These are contract examples and development-harness data, not shipped console da
   Chat accepts optional system instructions, `temperature`, `top_p`, and `max_tokens`, with
   `x-omniswitch-provider`, `x-omniswitch-config`, and `x-omniswitch-session-id` headers.
   The one-off key is memory-only and never included in cURL output.
-- Prompt create: `{name, template}`; render: `{prompt_id, variables}`. Versions return the same `prompts` shape. Provider credentials create/rotate take password-entered `provider_key` inputs and never echo them.
+- Prompt create: `{name, template}`; render: `{prompt_id, variables}`. Versions return the same `prompts` shape.
+- Provider credentials create: `{name, provider_type, provider_name, provider_key, base_url}` (optional base URL); rotate: `{name, provider_key}`. Password-entered `provider_key` inputs are never echoed. Org/workspace/user/member create: `{name}`, `{name, organization_id}`, `{email, name}`, `{workspace_id, user_id, role}` respectively. Circuit reset and retention sweep send an empty JSON object.
 - Feedback: `{trace_id, score, rating, comment}`; scores are -1, 0, 1. Workspaces/orgs/users/memberships use the existing create structs. No delete control exists for those resources.
 - New empty arrays remain honest empty states. `cost_source=none` displays **Unpriced**, not $0. A2A qualifiers come from config, and published capabilities from the actual agent card; task state is in memory, cancellation is best effort, and streaming means SSE task events.
 

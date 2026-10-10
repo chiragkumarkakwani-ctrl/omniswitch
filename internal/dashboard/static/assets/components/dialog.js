@@ -38,8 +38,10 @@ export function dialog(title, content, options = {}) {
   el.addEventListener("close", destroy, { once: true });
   el.addEventListener("keydown", (event) => {
     if (event.key !== "Tab") return;
-    const focusable = [...el.querySelectorAll("button, a[href], input, select, textarea, [tabindex]")]
-      .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    const selector = "button, a[href], input, select, textarea, [tabindex]";
+    const focusable = [...el.querySelectorAll(selector)].filter(
+      (node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length,
+    );
     const first = focusable[0];
     const last = focusable.at(-1);
     if (event.shiftKey && document.activeElement === first) {
