@@ -66,15 +66,17 @@ migrations are enabled. Example output:
 ```text
 Driver: sqlite
 Current version: 0
-Latest version: 3
-Pending migrations: 3
+Latest version: 4
+Pending migrations: 4
 ```
 
 ## `omniswitch migrate up [--dry-run]`
 
 Applies pending migrations in order using the same transactional migrator as
 `serve`. `--dry-run` lists their version numbers and names without applying them
-or creating the migration ledger. Repeated `up` calls are idempotent.
+or creating the migration ledger. Repeated `up` calls are idempotent. Schema
+version 4 adds retention indexes, including partial indexes for payload-bearing
+rows and independently retained log classes. Existing row data is unchanged.
 
 ```bash
 omniswitch migrate status

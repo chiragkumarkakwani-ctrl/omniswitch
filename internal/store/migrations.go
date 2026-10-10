@@ -309,6 +309,23 @@ var migrations = []migration{
 			`CREATE INDEX IF NOT EXISTS idx_guardrail_timestamp ON guardrail_events(timestamp)`,
 		},
 	},
+	{
+		Version: 4,
+		Name:    "retention_indexes",
+		// These statements are shared by both dialects and applied in one
+		// transaction. Partial indexes exclude cleared payloads, immortal cache
+		// entries, and the other independently retained request-log class.
+		SQLite: []string{
+			`CREATE INDEX IF NOT EXISTS idx_shadow_timestamp ON shadow_requests(timestamp)`,
+			`CREATE INDEX IF NOT EXISTS idx_logs_payload_timestamp ON request_logs(timestamp)
+				WHERE COALESCE(request_body, '') != '' OR COALESCE(response_body, '') != ''`,
+			`CREATE INDEX IF NOT EXISTS idx_logs_retention_timestamp ON request_logs(timestamp)
+				WHERE COALESCE(status, '') != 'limited' AND COALESCE(decision, '') != 'DENY'`,
+			`CREATE INDEX IF NOT EXISTS idx_logs_limited_timestamp ON request_logs(timestamp)
+				WHERE status = 'limited' OR decision = 'DENY'`,
+			`CREATE INDEX IF NOT EXISTS idx_cache_expires_at ON semantic_cache(expires_at) WHERE expires_at > ''`,
+		},
+	},
 }
 
 // Migrate applies each pending version atomically. PostgreSQL holds a session
