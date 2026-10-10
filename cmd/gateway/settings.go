@@ -16,6 +16,7 @@ import (
 type runtimeSettings struct {
 	listenAddr             string
 	dataDir                string
+	policyDir              string
 	authEnabled            bool
 	cacheThreshold         float64
 	cacheTTL               time.Duration
@@ -74,6 +75,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings := runtimeSettings{
 		listenAddr:             ":8080",
 		dataDir:                ".",
+		policyDir:              "policies",
 		cacheThreshold:         0.95,
 		cacheTTL:               24 * time.Hour,
 		cacheScope:             "api_key",
@@ -112,6 +114,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 
 	settings.listenAddr = env("OMNISWITCH_LISTEN", settings.listenAddr)
 	settings.dataDir = env("OMNISWITCH_DATA", settings.dataDir)
+	settings.policyDir = env("OMNISWITCH_POLICY_DIR", settings.policyDir)
 	settings.authEnabled = envBool("OMNISWITCH_AUTH", settings.authEnabled)
 	settings.cacheThreshold = envFloat("OMNISWITCH_CACHE_THRESHOLD", settings.cacheThreshold)
 	settings.cacheTTL = envDuration("OMNISWITCH_CACHE_TTL", settings.cacheTTL)
@@ -180,6 +183,9 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	}
 	if cfg.Gateway.DataDir != "" {
 		settings.dataDir = cfg.Gateway.DataDir
+	}
+	if cfg.Gateway.PolicyDir != "" {
+		settings.policyDir = cfg.Gateway.PolicyDir
 	}
 	if cfg.Gateway.Auth != nil {
 		settings.authEnabled = *cfg.Gateway.Auth

@@ -164,7 +164,7 @@ func TestValidateRejectsInvalidObservabilityTimeout(t *testing.T) {
 
 func TestValidateRejectsUnsupportedGuardrailAction(t *testing.T) {
 	_, err := Parse([]byte(`guardrails: {rules: [{name: test, pattern: test, action: retry}]}`), ".yaml")
-	if err == nil || !strings.Contains(err.Error(), "action must be deny, redact, warn, or log") {
+	if err == nil || !strings.Contains(err.Error(), "action must be deny, redact, warn, log, or fallback") {
 		t.Fatalf("Parse() error = %v, want guardrail action validation", err)
 	}
 }
@@ -226,5 +226,65 @@ func TestValidateGuardrailWebhook(t *testing.T) {
 	cfg, err := Parse([]byte(`guardrails: {webhooks: [{name: managed, url: https://guardrail.example.test/check, stage: input, action: deny, timeout: 2s, fail_open: true}]}`), ".yaml")
 	if err != nil || len(cfg.Guardrails.Webhooks) != 1 || cfg.Guardrails.Webhooks[0].Timeout == nil || cfg.Guardrails.Webhooks[0].Timeout.Duration != 2*time.Second || !*cfg.Guardrails.Webhooks[0].FailOpen {
 		t.Fatalf("Parse() cfg/err = %+v/%v, want valid webhook", cfg.Guardrails.Webhooks, err)
+	}
+}
+
+func TestValidateRegexGuardrailFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "active fallback",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, action: fallback, fallback: safe/model}]}`,
+		},
+		{
+			name: "missing target",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, action: fallback}]}`,
+			want: "fallback is required",
+		},
+		{
+			name: "blank target",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, action: fallback, fallback: '   '}]}`,
+			want: "fallback is required",
+		},
+		{
+			name: "empty provider",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, action: fallback, fallback: /model}]}`,
+			want: "must name a provider",
+		},
+		{
+			name: "prefix without provider",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, action: fallback, fallback: '@'}]}`,
+			want: "must name a provider",
+		},
+		{
+			name: "inactive target with deny",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, action: deny, fallback: safe/model}]}`,
+			want: "requires action: fallback",
+		},
+		{
+			name: "inactive target with default action",
+			body: `guardrails: {rules: [{name: sensitive, pattern: private, fallback: safe/model}]}`,
+			want: "requires action: fallback",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Parse([]byte(tt.body), ".yaml")
+			if tt.want != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("Parse() error = %v, want %q", err, tt.want)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Guardrails.Rules[0]; got.Action != "fallback" || got.Fallback != "safe/model" {
+				t.Fatalf("fallback rule = %+v, want active safe/model target", got)
+			}
+		})
 	}
 }

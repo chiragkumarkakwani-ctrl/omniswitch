@@ -17,7 +17,7 @@
   production-default run, confirm whether Portkey OSS enforces an
   `x-portkey-api-key` (or similar) header by default and, if so, add it to
   both the container env and this note.
-- **Cache/guardrails.** Portkey documents a semantic + simple cache and
+- **Cache/guardrails.** Portkey documents a similarity + exact cache (similarity mechanism not verified here) and
   guardrails product, but the exact Config schema fields for either were
   not confirmed against a running OSS container in this session. S6/S8 are
   `n/a` for portkey-oss until that's verified.

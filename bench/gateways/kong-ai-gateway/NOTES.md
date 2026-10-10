@@ -9,7 +9,7 @@
       (Enterprise).
     - Token-aware rate limiting → **AI Rate Limiting Advanced**
       (Enterprise).
-    - Semantic cache → separate **AI Semantic Cache** plugin, tier
+    - Embedding-based similarity cache → separate AI cache plugin, tier
       unclear, not available in an OSS-only image.
   Any published comparison must state Kong's cells were run OSS-only and
   that Enterprise plugins exist for these capabilities but were not

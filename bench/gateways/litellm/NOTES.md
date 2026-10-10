@@ -27,7 +27,7 @@
   separate (unbenchmarked) feature, exercised only in S8 conformance
   checks, not the latency scenarios.
 - **Cache.** `litellm_settings.cache: false` in both baseline cells. S6
-  overlays LiteLLM's documented Redis or in-memory semantic cache
+  overlays LiteLLM's documented Redis or in-memory embedding-based similarity cache
   (embedding-based, per LiteLLM's product page) with the same TTL as
   every other gateway's cache cell.
 - **Rust gateway.** LiteLLM's optional `rust: true` per-model flag is

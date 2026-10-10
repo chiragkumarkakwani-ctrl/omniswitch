@@ -20,11 +20,26 @@ type InferenceReplica struct {
 	Priority int
 }
 
+// InferenceReplicaHealth is a snapshot of a replica's latest health probe.
+// Healthy and LastCheck are nil until the first probe completes.
+type InferenceReplicaHealth struct {
+	URL       string     `json:"url"`
+	Runtime   string     `json:"runtime"`
+	Models    []string   `json:"models"`
+	Priority  int        `json:"priority"`
+	Healthy   *bool      `json:"healthy"`
+	LastCheck *time.Time `json:"last_check"`
+	LatencyMS float64    `json:"latency_ms"`
+	QueueLen  int        `json:"queue_len"`
+}
+
 type InferenceBackend struct {
 	name     string
 	replicas []InferenceReplica
 	client   *http.Client
 	health   *healthTracker
+	cancel   context.CancelFunc
+	done     chan struct{}
 }
 
 type healthTracker struct {
@@ -32,30 +47,72 @@ type healthTracker struct {
 	latency   map[string]time.Duration
 	queueLen  map[string]int
 	lastCheck map[string]time.Time
+	healthy   map[string]bool
 }
 
 func NewInferenceBackend(name string, replicas []InferenceReplica, healthInterval time.Duration) *InferenceBackend {
 	if healthInterval <= 0 {
 		healthInterval = 10 * time.Second
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	backend := &InferenceBackend{
 		name:     strings.TrimSpace(name),
 		replicas: append([]InferenceReplica(nil), replicas...),
 		client:   &http.Client{Timeout: 120 * time.Second},
+		cancel:   cancel,
+		done:     make(chan struct{}),
 		health: &healthTracker{
 			latency:   map[string]time.Duration{},
 			queueLen:  map[string]int{},
 			lastCheck: map[string]time.Time{},
+			healthy:   map[string]bool{},
 		},
 	}
 	if backend.name == "" {
 		backend.name = "inference"
 	}
-	go backend.probeLoop(healthInterval)
+	for i := range backend.replicas {
+		backend.replicas[i].Models = append([]string(nil), backend.replicas[i].Models...)
+	}
+	go backend.probeLoop(ctx, healthInterval)
 	return backend
 }
 
 func (b *InferenceBackend) Name() string { return b.name }
+
+// Close stops health probes and waits for in-flight probes to exit.
+func (b *InferenceBackend) Close() error {
+	b.cancel()
+	<-b.done
+	return nil
+}
+
+// ReplicaHealth returns independent snapshots in configuration order. Admin
+// handlers can call this without issuing network requests or sharing tracker maps.
+func (b *InferenceBackend) ReplicaHealth() []InferenceReplicaHealth {
+	b.health.mu.Lock()
+	defer b.health.mu.Unlock()
+	snapshots := make([]InferenceReplicaHealth, 0, len(b.replicas))
+	for _, replica := range b.replicas {
+		runtime := strings.ToLower(strings.TrimSpace(replica.Runtime))
+		if runtime == "" {
+			runtime = "openai"
+		}
+		snapshot := InferenceReplicaHealth{
+			URL: replica.URL, Runtime: runtime,
+			Models: append([]string(nil), replica.Models...), Priority: replica.Priority,
+			LatencyMS: float64(b.health.latency[replica.URL]) / float64(time.Millisecond),
+			QueueLen:  b.health.queueLen[replica.URL],
+		}
+		if checked, ok := b.health.lastCheck[replica.URL]; ok {
+			healthy := b.health.healthy[replica.URL]
+			snapshot.Healthy = &healthy
+			snapshot.LastCheck = &checked
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
 
 func (b *InferenceBackend) Models() []ModelInfo {
 	seen := map[string]bool{}
@@ -91,7 +148,7 @@ func (b *InferenceBackend) ChatCompletion(ctx context.Context, req ChatRequest) 
 		resp, err = b.chatOpenAICompatible(ctx, replica, req)
 	}
 	meta.Latency = time.Since(start)
-	b.health.record(replica.URL, meta.Latency, 0)
+	b.health.recordLatency(replica.URL, meta.Latency)
 	if err != nil {
 		meta.Error = err.Error()
 		return ChatResponse{}, meta, err
@@ -122,7 +179,7 @@ func (b *InferenceBackend) ChatCompletionStream(ctx context.Context, req ChatReq
 	chunks, meta, err := streamOpenAICompatible(ctx, b.client, strings.TrimRight(replica.URL, "/")+"/chat/completions", "", req, b.name, nil)
 	meta.ProviderType = "inference"
 	if err == nil {
-		b.health.record(replica.URL, meta.Latency, 0)
+		b.health.recordLatency(replica.URL, meta.Latency)
 	}
 	return chunks, meta, err
 }
@@ -137,8 +194,17 @@ func (b *InferenceBackend) selectReplica(model string) (InferenceReplica, bool) 
 	if len(candidates) == 0 {
 		return InferenceReplica{}, false
 	}
+	b.health.mu.Lock()
+	defer b.health.mu.Unlock()
 	sort.SliceStable(candidates, func(i, j int) bool {
-		return b.health.score(candidates[i]) < b.health.score(candidates[j])
+		leftHealthy, leftChecked := b.health.healthy[candidates[i].URL]
+		rightHealthy, rightChecked := b.health.healthy[candidates[j].URL]
+		leftUnhealthy := leftChecked && !leftHealthy
+		rightUnhealthy := rightChecked && !rightHealthy
+		if leftUnhealthy != rightUnhealthy {
+			return !leftUnhealthy
+		}
+		return b.health.scoreLocked(candidates[i]) < b.health.scoreLocked(candidates[j])
 	})
 	return candidates[0], true
 }
@@ -218,54 +284,77 @@ func (b *InferenceBackend) chatTGI(ctx context.Context, replica InferenceReplica
 	}, nil
 }
 
-func (b *InferenceBackend) probeLoop(interval time.Duration) {
+func (b *InferenceBackend) probeLoop(ctx context.Context, interval time.Duration) {
+	defer close(b.done)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		b.probeOnce()
-		<-ticker.C
+		b.probeOnce(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
-func (b *InferenceBackend) probeOnce() {
+func (b *InferenceBackend) probeOnce(ctx context.Context) {
+	var wg sync.WaitGroup
 	for _, replica := range b.replicas {
+		wg.Add(1)
 		go func(replica InferenceReplica) {
+			defer wg.Done()
 			start := time.Now()
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
-			url := strings.TrimRight(replica.URL, "/") + "/health"
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, inferenceHealthURL(replica), nil)
 			if err != nil {
+				b.health.recordProbe(replica.URL, time.Since(start), 0, false)
 				return
 			}
 			resp, err := b.client.Do(req)
 			if err != nil {
-				b.health.record(replica.URL, 30*time.Second, 100)
+				b.health.recordProbe(replica.URL, time.Since(start), 0, false)
 				return
 			}
 			defer resp.Body.Close()
-			queueLen := 0
-			_ = json.NewDecoder(resp.Body).Decode(&struct {
-				QueueLen *int `json:"queue_len,omitempty"`
-			}{QueueLen: &queueLen})
-			if resp.StatusCode >= 200 && resp.StatusCode < 500 {
-				b.health.record(replica.URL, time.Since(start), queueLen)
+			var status struct {
+				QueueLen int `json:"queue_len"`
 			}
+			_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&status)
+			healthy := resp.StatusCode >= 200 && resp.StatusCode < 300
+			b.health.recordProbe(replica.URL, time.Since(start), maxInt(status.QueueLen, 0), healthy)
 		}(replica)
 	}
+	wg.Wait()
 }
 
-func (t *healthTracker) record(url string, latency time.Duration, queueLen int) {
+func inferenceHealthURL(replica InferenceReplica) string {
+	base := strings.TrimSuffix(strings.TrimRight(replica.URL, "/"), "/v1")
+	if strings.EqualFold(strings.TrimSpace(replica.Runtime), "ollama") {
+		return base + "/api/tags"
+	}
+	return base + "/health"
+}
+
+func (t *healthTracker) recordLatency(url string, latency time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.latency[url] = latency
+}
+
+func (t *healthTracker) recordProbe(url string, latency time.Duration, queueLen int, healthy bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.latency[url] = latency
 	t.queueLen[url] = queueLen
 	t.lastCheck[url] = time.Now().UTC()
+	t.healthy[url] = healthy
 }
 
-func (t *healthTracker) score(replica InferenceReplica) time.Duration {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// scoreLocked ranks observations without turning health penalties into fake
+// measured latency/queue data. The caller holds mu for a consistent sort.
+func (t *healthTracker) scoreLocked(replica InferenceReplica) time.Duration {
 	latency := t.latency[replica.URL]
 	if latency <= 0 {
 		latency = 500 * time.Millisecond

@@ -22,6 +22,7 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 		"config_path": settings.configPath,
 		"gateway": map[string]any{
 			"listen":                   settings.listenAddr,
+			"policy_dir":               settings.policyDir,
 			"auth_enabled":             settings.authEnabled,
 			"cache_threshold":          settings.cacheThreshold,
 			"cache_ttl":                settings.cacheTTL.String(),
@@ -86,9 +87,12 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 			"enabled":            true,
 			"agent_card_path":    "/.well-known/agent-card.json",
 			"jsonrpc_path":       "/a2a",
-			"methods":            []string{"SendMessage", "GetExtendedAgentCard"},
-			"task_lifecycle":     false,
-			"streaming":          false,
+			"methods":            gateway.A2AMethods(),
+			"task_lifecycle":     true,
+			"task_store":         "in_memory",
+			"cancel":             "best_effort",
+			"streaming":          true,
+			"streaming_mode":     "sse_task_events",
 			"push_notifications": false,
 		},
 	}
@@ -178,6 +182,7 @@ func routeSummaries(routes map[string]router.Route) []map[string]any {
 		summaries = append(summaries, map[string]any{
 			"model":           name,
 			"provider":        route.Provider,
+			"strategy":        route.Strategy,
 			"fallbacks":       append([]string(nil), route.Fallbacks...),
 			"max_retries":     route.MaxRetries,
 			"retry_backoff":   route.RetryBackoff,

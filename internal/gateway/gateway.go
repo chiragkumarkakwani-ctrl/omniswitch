@@ -42,7 +42,6 @@ type Handler struct {
 	shadowProvider        string
 	configRouters         sync.Map
 	alerts                *AlertManager
-	logBroadcaster        func(store.RequestLog)
 }
 
 type cachedConfigRouter struct {
@@ -125,10 +124,6 @@ func (h *Handler) SetAlerts(config AlertConfig) {
 		return
 	}
 	h.alerts = NewAlertManager(config)
-}
-
-func (h *Handler) SetLogBroadcaster(broadcast func(store.RequestLog)) {
-	h.logBroadcaster = broadcast
 }
 
 // ChatCompletions handles POST /v1/chat/completions.

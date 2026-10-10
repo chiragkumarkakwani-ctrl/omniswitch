@@ -47,7 +47,7 @@ func newRouteTestServer(t *testing.T) http.Handler {
 		feedback: feedback.New(st),
 		prompt:   prompt.New(st),
 		org:      org.New(st),
-		eval:     eval.NewHandler(st),
+		eval:     eval.NewHandler(t.TempDir()),
 		vault:    vault.NewHandler(vault.New(st, "")),
 		dash:     dashboard.New(st),
 	})

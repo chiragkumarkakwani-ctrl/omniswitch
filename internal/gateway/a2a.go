@@ -248,6 +248,11 @@ func (h *Handler) a2aCancelTask(w http.ResponseWriter, r *http.Request, request 
 	writeA2AResponse(w, request.ID, taskPayload(task))
 }
 
+// A2AMethods lists the canonical JSON-RPC methods served by the gateway.
+func A2AMethods() []string {
+	return []string{"SendMessage", "SendMessageStream", "GetTask", "CancelTask", "GetExtendedAgentCard"}
+}
+
 func (h *Handler) a2aAgentCard(r *http.Request) map[string]any {
 	scheme := "http"
 	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
@@ -255,12 +260,16 @@ func (h *Handler) a2aAgentCard(r *http.Request) map[string]any {
 	}
 	return map[string]any{
 		"name":        "OmniSwitch AI Gateway",
-		"description": "Routes and governs AI inference through an A2A direct-message interface.",
+		"description": "Governed text inference with SSE task events (not token deltas), in-memory tasks, best-effort cancellation, and no push notifications.",
 		"version":     "1.0",
 		"supportedInterfaces": []map[string]string{{
 			"url": scheme + "://" + r.Host + "/a2a", "protocolBinding": "JSONRPC", "protocolVersion": "1.0",
 		}},
-		"capabilities":       map[string]bool{"streaming": true, "pushNotifications": false, "extendedAgentCard": true},
+		"capabilities": map[string]any{
+			"streaming": true, "pushNotifications": false, "extendedAgentCard": true,
+			"streamingMode": "sse_task_events", "taskLifecycle": true,
+			"taskStore": "in_memory", "cancel": "best_effort", "methods": A2AMethods(),
+		},
 		"defaultInputModes":  []string{"text/plain"},
 		"defaultOutputModes": []string{"text/plain"},
 		"securitySchemes": map[string]any{

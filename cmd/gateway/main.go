@@ -108,6 +108,7 @@ func runServe() {
 
 	// Initialize provider registry.
 	registry := buildProviderRegistry(settings, vaultManager)
+	defer registry.Close()
 
 	if len(registry.Names()) == 0 {
 		log.Println("WARNING: No provider API keys configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY.")
@@ -141,7 +142,7 @@ func runServe() {
 	feedbackHandler := feedback.New(st)
 	promptHandler := prompt.New(st)
 	orgHandler := org.New(st)
-	evalHandler := eval.NewHandler(st)
+	evalHandler := eval.NewHandler(settings.policyDir)
 	vaultHandler := vault.NewHandler(vaultManager)
 	dash := dashboard.New(st)
 	dash.SetConfigPath(settings.configPath)
@@ -179,10 +180,10 @@ func runServe() {
 	// Print startup banner.
 	fmt.Println(banner())
 	log.Printf("OmniSwitch AI Gateway listening on %s", settings.listenAddr)
-	log.Printf("Dashboard: http://localhost%s", settings.listenAddr)
-	log.Printf("Gateway:   http://localhost%s/v1/chat/completions", settings.listenAddr)
+	log.Printf("Dashboard: %s", gatewayLocalURL(settings.listenAddr, ""))
+	log.Printf("Gateway:   %s", gatewayLocalURL(settings.listenAddr, "/v1/chat/completions"))
 	if settings.mcpEnabled {
-		log.Printf("MCP:       http://localhost%s/mcp", settings.listenAddr)
+		log.Printf("MCP:       %s", gatewayLocalURL(settings.listenAddr, "/mcp"))
 	}
 	log.Printf("Providers: %v", registry.Names())
 

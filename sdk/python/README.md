@@ -24,7 +24,7 @@ from omniswitch import OmniSwitch
 
 client = OmniSwitch(
     gateway_url="http://localhost:8080",
-    api_key="sk-omniswitch-...",
+    api_key="sk-osw-...",
     config="production-routing",
     trace_id="agent-run-001",
     session_id="conversation-abc",
@@ -44,7 +44,7 @@ The gateway URL may include `/v1`, but does not have to.
 
 ```bash
 export OMNISWITCH_GATEWAY_URL=http://localhost:8080
-export OMNISWITCH_API_KEY=sk-omniswitch-...
+export OMNISWITCH_API_KEY=sk-osw-...
 export OMNISWITCH_CONFIG=production-routing
 export OMNISWITCH_TRACE_ID=agent-run-001
 export OMNISWITCH_SESSION_ID=conversation-abc
@@ -57,6 +57,3 @@ client = OmniSwitch().with_config("experiment-a")
 client = client.with_trace("trace-123", session_id="session-123")
 client = client.with_provider("anthropic")
 ```
-
-Early `from sentinel import OmniSwitch` imports are still supported by a small
-compatibility shim.

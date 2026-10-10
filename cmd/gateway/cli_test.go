@@ -139,8 +139,8 @@ func TestDispatchValidateConfigInvalid(t *testing.T) {
 	if action != actionExit || code != 1 {
 		t.Fatalf("dispatch(validate-config %s) = (%v, %d), want (actionExit, 1)", path, action, code)
 	}
-	if !strings.Contains(stderr.String(), "not implemented") {
-		t.Fatalf("stderr = %q, want a not-implemented error for authorization.external", stderr.String())
+	if !strings.Contains(stderr.String(), "field external not found") {
+		t.Fatalf("stderr = %q, want an unknown-field error for removed authorization.external", stderr.String())
 	}
 }
 

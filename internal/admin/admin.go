@@ -66,7 +66,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		ID:                 newID("key"),
 		Name:               req.Name,
 		KeyHash:            hex.EncodeToString(hash[:]),
-		KeyPrefix:          rawKey[:12] + "...",
+		KeyPrefix:          rawKey[:len("sk-osw-")+6] + "…",
 		WorkspaceID:        req.WorkspaceID,
 		Role:               req.Role,
 		CreatedAt:          time.Now().UTC(),
@@ -125,7 +125,7 @@ func generateKey() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("generate API key: %w", err)
 	}
-	return "sk-sentinel-" + hex.EncodeToString(b[:]), nil
+	return "sk-osw-" + hex.EncodeToString(b[:]), nil
 }
 
 func newID(prefix string) string {

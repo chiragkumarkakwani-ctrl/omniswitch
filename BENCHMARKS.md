@@ -1,7 +1,7 @@
 # OmniSwitch Benchmarks
 
-Honest numbers, reproducible methodology. No cherry-picking. Re-run everything
-below on your own hardware before drawing conclusions.
+Reproducible methodology, not performance claims. Run the commands below on
+your own hardware and retain raw evidence before drawing conclusions.
 
 ## Gateway overhead (micro-benchmarks)
 
@@ -12,29 +12,16 @@ go test ./internal/accel/ -bench "First|Regexp" -benchtime=2s
 go test ./internal/guardrail/ -bench . -benchtime=2s
 ```
 
-### Guardrail pattern scanning (8 rules, Rust-WASM vs pure Go)
+### Guardrail pattern scanning
 
-Measured on AMD Ryzen 5 5500U (12 threads), Windows, Go 1.26, wazero 1.9.
-The accelerator executes all rules in a single pass inside an embedded WASM
-module compiled from Rust (`accel/`); the Go path runs each rule as a separate
-`regexp.Match` call. Both paths return identical trigger decisions.
+The Rust-WASM accelerator scans configured rules in an embedded module; the Go
+fallback uses precompiled regular expressions. The microbenchmark commands
+above compare those implementations, not end-to-end gateway/provider latency.
 
-| Payload | Pure-Go path | Rust-WASM path | Speedup |
-| --- | --- | --- | --- |
-| 8 KB | ~1.48 ms | ~1.24 ms | 1.19x |
-| 64 KB | ~12.8 ms | ~9.3 ms | 1.38x |
-| 256 KB | ~53.5 ms | ~37.8 ms | 1.42x |
-
-Interpretation:
-
-- The accelerator pays off for large payloads and many rules; at small sizes
-  the WASM call overhead roughly cancels the engine advantage.
-- The bigger real-world win in this codebase came from **precompiling rule
-  regexes once** instead of per request: `guardrail.NewEngineWithConfig` now
-  compiles every custom rule a single time, removing `regexp.Compile` from the
-  request path entirely.
-- Native (non-WASM) execution of the same Rust scanner would be faster still;
-  WASM keeps the single static-binary distribution story intact.
+No measurement campaign or reproducible numeric performance result is published
+here. Capture toolchain/host metadata, raw benchmark output, rule configuration,
+and decision-correctness results before drawing conclusions. The competitive
+harness below defines the methodology for cross-gateway comparisons.
 
 ## Load testing against a running gateway
 
@@ -43,7 +30,7 @@ Use any HTTP load generator pointed at your gateway. Example with
 
 ```bash
 export BASE=http://localhost:8080
-export KEY=sk-omniswitch-...
+export KEY=sk-osw-...
 printf 'POST %s/v1/chat/completions\nAuthorization: Bearer %s\n@payload.json\n' \
   "$BASE" "$KEY" > target.txt
 

@@ -120,10 +120,18 @@ by OpenAI-compatible clients. Provide the model with `metadata.model` or the
 Supported A2A methods:
 
 - `SendMessage`
+- `SendMessageStream` (SSE task status/artifact events, not token-by-token output)
+- `GetTask`
+- `CancelTask` (best effort)
 - `GetExtendedAgentCard`
 
-Task lifecycle methods, streaming, push notifications, and outbound A2A client
-calls are not yet implemented.
+Tasks are stored in memory and are lost on restart; they are
+not shared across gateway replicas. `SendMessageStream` emits a working status
+before inference and the response artifact after the chat call completes.
+`CancelTask` updates task state but does not abort the upstream inference call;
+completion can supersede that state. Push notifications and outbound A2A client
+calls are not supported. The Agent Card capability qualifiers and `/api/config`
+A2A block report these boundaries explicitly.
 
 ## Management API
 
@@ -349,11 +357,15 @@ Renders a prompt template with variables.
 
 ### `POST /api/evals/policy`
 
-Replays a batch of tool requests against one or more OmniSwitch policy files.
+Replays 1–1,000 uploaded tool requests against named or inline policies. The
+JSON body is limited to 1 MiB. A bare filename selects a policy from the
+configured `gateway.policy_dir` (default `policies`); no server path is
+accepted. Inline `body` values use CEL, or Policy YAML for `.yaml`/`.yml` names.
 
 ```json
 {
-  "policy_paths": ["policies/production-delete.yaml"],
+  "policies": [{"name": "production-delete.yaml"}],
+  "baseline_policies": [{"name": "baseline.cel", "body": "false"}],
   "requests": [
     {
       "agent": {"id": "coder", "department": "engineering"},
@@ -369,7 +381,15 @@ Replays a batch of tool requests against one or more OmniSwitch policy files.
 }
 ```
 
-The response includes aggregate `allowed`, `denied`, and `errors` counts plus each decision trace.
+The response includes `total`, `allowed`, `denied`, `errors`, and `results`
+(each result has `index`, `request`, `decision`, and an optional `error`).
+When `baseline_policies` is supplied, the server returns a `baseline` summary
+with the same fields and `diff`: `changed`, `allowed_to_denied`,
+`denied_to_allowed`, and per-index `changes` with `before`/`after` decisions.
+Diff ignores generated decision IDs, timing, and trace hashes; it compares
+allowed status, matched rule, reason, and errors. Arbitrary `policy_paths`
+and client-supplied baseline decisions are rejected. Candidate and baseline
+policy bodies have a combined 1 MiB limit, including named files.
 
 ## Moderation
 

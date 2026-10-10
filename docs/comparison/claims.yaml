@@ -1,7 +1,3 @@
-# Claims register for OmniSwitch's competitive benchmark effort.
-# One row per (gateway, capability). See docs/comparison/README.md for
-# the review process and bench/tools/render-comparison for the renderer.
-# Do not hand-edit COMPARISON.md; regenerate it from this file.
 schema_version: 1
 generated_note: Hand-authored capability/competitive claims register for the OmniSwitch public-beta benchmark
   effort. One row per (gateway, capability). Rendered to docs/comparison/COMPARISON.md by bench/tools/render-comparison.
@@ -35,7 +31,7 @@ gateways:
   name: TensorZero
   tier: harness
 - id: envoy-ai-gateway
-  name: Envoy AI Gateway / Agent Router
+  name: Envoy AI Gateway / Agent Router (Kubernetes-native)
   tier: harness-deferred
 - id: openrouter
   name: OpenRouter
@@ -79,7 +75,7 @@ capabilities:
 - id: exact-cache
   name: Exact-match cache
 - id: semantic-cache
-  name: Semantic / similarity cache
+  name: Similarity cache (mechanism qualified)
 - id: budgets-quotas
   name: Budgets and quotas
 - id: rate-limiting
@@ -134,296 +130,319 @@ capabilities:
   name: Published cross-gateway benchmarks
 - id: license
   name: License
+- id: self-hosted
+  name: Self-hosted deployment
+- id: token-rate-limits
+  name: Token-per-window limits
+- id: image-generation
+  name: Image generation endpoint
+- id: audio-transcriptions
+  name: Audio transcription endpoint
+- id: audio-speech
+  name: Audio speech endpoint
 claims:
 - capability: openai-compatible-chat
   gateway: omniswitch
   status: 'yes'
   detail: /v1/chat/completions, streaming and non-streaming.
   source_url: internal/gateway/gateway.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: embeddings
   gateway: omniswitch
   status: 'yes'
   detail: /v1/embeddings.
   source_url: internal/gateway/embeddings.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: responses-api
   gateway: omniswitch
   status: partial
-  detail: /v1/responses text subset only (no image/audio/tool-streaming parity with OpenAI).
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: /v1/responses translates text/image inputs, function tools, call/result history, and blocking/SSE
+    events through the governed chat pipeline. Hosted tools and durable Responses history are out of scope.
+  source_url: internal/gateway/compat.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: anthropic-messages-api
   gateway: omniswitch
   status: partial
-  detail: /v1/messages core subset.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: /v1/messages translates system/content-block arrays, tool_use/tool_result, blocking responses,
+    and SSE tool events through the chat pipeline. Unsupported capabilities return explicit errors.
+  source_url: internal/gateway/compat.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: native-providers
   gateway: omniswitch
-  status: partial
-  detail: 4 native adapters (OpenAI, Anthropic, Google, Groq); no native Bedrock/Vertex/Cohere. Everything
-    else goes through the generic OpenAI-compatible custom adapter with 15+ documented presets.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  status: 'yes'
+  detail: '7 native adapters: OpenAI, Anthropic, Google Gemini, Groq, Azure OpenAI, AWS Bedrock, and Cohere
+    (rerank, not chat). Custom OpenAI-compatible endpoints and inference replicas are separate adapters.'
+  source_url: cmd/gateway/providers.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: custom-openai-endpoint
   gateway: omniswitch
   status: 'yes'
-  detail: Generic custom provider adapter with presets for Azure OpenAI, Ollama, vLLM, LiteLLM, DeepSeek,
-    Together, Fireworks, and aliases.
-  source_url: CHANGELOG.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Generic OpenAI-compatible custom adapter, 8 convenience presets, and config-registered vLLM/Ollama
+    inference replicas with health probes. Native Azure OpenAI is separate.
+  source_url: cmd/gateway/providers.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: fallbacks-retries
   gateway: omniswitch
   status: 'yes'
-  detail: route-level fallbacks, max_retries, retry_backoff, retry_codes, per-attempt timeout.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Route-level fallbacks, max_retries, retry_backoff, retry_codes, and per-attempt timeout.
+  source_url: internal/router/router.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: weighted-load-balancing
   gateway: omniswitch
   status: 'yes'
-  detail: Weighted variants per route.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Weighted provider/model variants per route.
+  source_url: internal/router/router.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: conditional-routing
   gateway: omniswitch
   status: 'yes'
-  detail: CEL condition expressions on route variants.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: CEL eligibility conditions on route variants.
+  source_url: internal/router/router.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: circuit-breaker
   gateway: omniswitch
   status: 'yes'
-  detail: Default 5 failures / 60s cooldown, configurable via gateway.circuit_breaker_failures / _cooldown.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Provider circuit breaker; default 5 failures and 60s cooldown, configurable in gateway settings.
+  source_url: internal/router/circuitbreaker.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: exact-cache
   gateway: omniswitch
   status: 'yes'
-  detail: SHA-256 request-fingerprint cache key, tenant-scoped (api_key/workspace/organization/global),
-    SQLite-backed.
+  detail: SHA-256 full-request fingerprint cache with api_key/workspace/organization/global scoping; persistent
+    response cache with TTL.
   source_url: internal/cache/cache.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: semantic-cache
   gateway: omniswitch
   status: 'yes'
-  detail: NOT embedding-based. Vectorize() builds a normalized token-frequency map over lowercased, stop-word-filtered
-    tokens; Similarity() is cosine over those token-frequency vectors. State this precisely wherever OmniSwitch's
-    cache is compared to embedding-based semantic caches.
+  detail: 'Lexical similarity cache: normalized, lowercased, stop-word-filtered token-frequency vectors
+    with cosine similarity. No embedding model; superficial overlap can match and paraphrases can be missed.'
   source_url: internal/cache/cache.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: budgets-quotas
   gateway: omniswitch
   status: 'yes'
-  detail: Cost and token budgets per API key.
-  source_url: internal/store/store.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Per-key monthly cost/token budgets plus scoped request/token/USD policies and per-key RPM, TPM,
+    and USD/day limits. Preflight reservations reconcile reported usage; this is not unified billing.
+  source_url: internal/gateway/gateway.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: rate-limiting
   gateway: omniswitch
-  status: partial
-  detail: Local sliding-window request limits plus optional Redis-coordinated fixed window across replicas;
-    no token-based (TPM) limiter.
-  source_url: internal/gateway/ratelimit_redis.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  status: 'yes'
+  detail: Request, token, and spend policies with local or Redis-coordinated counters; per-key RPM/TPM/USD-day
+    limits and rejection/reset headers.
+  source_url: internal/gateway/middleware.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: api-keys
   gateway: omniswitch
   status: 'yes'
-  detail: Hashed API keys, bootstrap owner key, workspace-scoped keys.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: SHA-256-hashed API keys, workspace roles, and owner/admin bootstrap. Generated sk-osw keys contain
+    32 random bytes; existing sk-sentinel keys authenticate unchanged.
+  source_url: internal/admin/admin.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: oidc-jwt
   gateway: omniswitch
   status: 'yes'
-  detail: OIDC JWT/JWKS workload identity (identity.oidc.jwks_url/issuer/audience).
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: OIDC workload JWT/JWKS verification with issuer/audience and identity-claim mapping; not dashboard
+    SSO.
+  source_url: internal/gateway/jwt.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: mtls
   gateway: omniswitch
   status: 'no'
-  detail: Explicitly not implemented; listed as a roadmap item, not a shipped feature.
-  source_url: ROADMAP.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: The gateway does not configure client-certificate authentication. Terminate TLS and client-certificate
+    verification externally when required.
+  source_url: cmd/gateway/main.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: rbac-policy-cel
   gateway: omniswitch
   status: 'yes'
   detail: CEL allow/deny authorization rules plus fixed role gates.
   source_url: internal/policy/engine.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: guardrails-builtin
   gateway: omniswitch
   status: 'yes'
   detail: Built-in PII/prompt-injection/SQL-injection/toxicity/secret detectors plus custom regex rules,
     single-pass Rust-WASM scan with pure-Go fallback.
   source_url: internal/guardrail
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: guardrail-webhooks
   gateway: omniswitch
   status: 'yes'
-  detail: HTTP webhook connectors with configurable stage/action/timeout/fail_open.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: HTTP JSON moderation connectors with stage, action, headers, timeout, fail_open, and bounded
+    retry configuration.
+  source_url: internal/guardrail/guardrail.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: output-redaction
   gateway: omniswitch
   status: 'yes'
-  detail: redact action available on output-stage guardrail rules.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Output-stage text guardrails can redact matched content; streamed output enforcement requires
+    stream buffering.
+  source_url: internal/gateway/gateway.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: streaming-guardrails
   gateway: omniswitch
   status: 'yes'
-  detail: 'guardrails.stream_buffer defaults to true: the full SSE stream is buffered and scanned before
-    release, which means TTFT with guardrails on is dominated by upstream generation time, not gateway
-    overhead. Benchmark both stream_buffer=true and false and label them.'
+  detail: 'guardrails.stream_buffer defaults to true: SSE is buffered and scanned before release. Disabling
+    it means output can already have been sent when a rule triggers.'
   source_url: internal/gateway/gateway.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: mcp-http
   gateway: omniswitch
   status: 'yes'
-  detail: HTTP MCP targets with streamed SSE / streamable-HTTP pass-through.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: HTTP MCP targets with SSE/streamable-HTTP pass-through.
+  source_url: internal/proxy/handler.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: mcp-stdio
   gateway: omniswitch
   status: 'yes'
-  detail: Persistent stdio MCP transport targets.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Persistent stdio MCP targets configured with command, args, and environment.
+  source_url: internal/proxy/stdio.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: mcp-federation
   gateway: omniswitch
   status: 'yes'
-  detail: Multiple named MCP targets, policy-gated tools/call, server-side headers.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Named targets with prefixed tools, server-side headers, and policy-gated tool calls.
+  source_url: internal/proxy/handler.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: openapi-to-mcp
   gateway: omniswitch
-  status: 'no'
-  detail: Not implemented; explicit gap in the project's own comparison doc.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  status: 'yes'
+  detail: OpenAPI YAML/JSON specs from files or URLs become MCP tools via mcp.targets[].openapi_spec;
+    policy-gated REST calls use target headers and trace context.
+  source_url: internal/proxy/openapi.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: mcp-oauth-token-exchange
   gateway: omniswitch
-  status: 'yes'
-  detail: RFC 8693 token exchange plus RFC 7523 JWT Bearer Grant for MCP OAuth delegation.
-  source_url: CHANGELOG.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  status: partial
+  detail: Beta per-target RFC 8693 token exchange for verified OIDC subject tokens, with server-side credentials,
+    audience/scopes, and per-subject caching. OAuth discovery, DCR, and PKCE are not implemented.
+  source_url: internal/proxy/token_exchange.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+  qualifier: beta
 - capability: a2a-agent-card
   gateway: omniswitch
   status: 'yes'
-  detail: Public A2A v1 Agent Card discovery (/.well-known/agent-card.json) plus authenticated GetExtendedAgentCard.
+  detail: Public A2A Agent Card discovery and authenticated GetExtendedAgentCard; governed model access,
+    not a downstream agent proxy.
   source_url: internal/gateway/a2a.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: a2a-tasks
   gateway: omniswitch
   status: partial
-  detail: 'SendMessage / SendMessageStream, GetTask, CancelTask implemented (JSON-RPC methods and REST
-    aliases). Agent card advertises pushNotifications: false, so push-notification task updates are not
-    supported.'
+  detail: SendMessage, SendMessageStream, GetTask, and best-effort CancelTask. SSE sends task status/artifact
+    events, not token deltas. Tasks are in memory and lost on restart; no push notifications or upstream
+    abort on cancel.
   source_url: internal/gateway/a2a_tasks.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+  qualifier: beta
 - capability: prompt-management
   gateway: omniswitch
   status: partial
-  detail: Templates with version history and rendering; no approval workflow, rollback/promotion, or experiments.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Prompt templates, versions, and rendering; no approval/promotion workflow or model-quality experiments.
+  source_url: internal/prompt/prompt.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: evals
   gateway: omniswitch
   status: partial
-  detail: Policy replay endpoint for batch allow/deny simulation only; no model-quality eval datasets/scoring.
-  source_url: docs/PORTKEY_COMPARISON.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Bounded policy replay and server-side baseline diff using named confined files or inline bodies;
+    no model-quality datasets, scoring, or experiment handlers.
+  source_url: internal/eval/eval.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: otlp-export
   gateway: omniswitch
   status: 'yes'
-  detail: OTel trace export (tested against Langfuse/Jaeger/Tempo).
+  detail: OTLP/HTTP trace export to an operator-configured collector; collector-specific integrations
+    are not certified by this register.
   source_url: internal/telemetry/telemetry.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: prometheus
   gateway: omniswitch
   status: 'yes'
-  detail: /metrics endpoint, gated by OMNISWITCH_PROMETHEUS_ENABLED.
-  source_url: internal/gatewayconfig/config.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: /metrics exposition when observability.prometheus_enabled is enabled; operator-configured access
+    posture.
+  source_url: cmd/gateway/routes.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: dashboard
   gateway: omniswitch
   status: 'yes'
-  detail: Local dashboard for logs, metrics, prompts, providers, and guardrails.
+  detail: Embedded dashboard for request logs, metrics, prompts, API keys, providers, and guardrail views.
   source_url: internal/dashboard/dashboard.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: hot-reload
   gateway: omniswitch
   status: 'yes'
-  detail: Config hot reload covers routes, guardrails, cache posture, circuit breaker, and shadow provider
-    without restart.
-  source_url: internal/gateway/gateway.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  detail: Config reload applies routes, guardrails, cache posture, circuit breaker, alerts, and shadow
+    provider; listener/provider changes require restart.
+  source_url: cmd/gateway/settings.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: sqlite-postgres
   gateway: omniswitch
   status: 'yes'
-  detail: SQLite by default; PostgreSQL via OMNISWITCH_DATABASE_URL. Logs and keys remain SQLite-local
-    even in the Postgres case per the project's own docs.
+  detail: SQLite default; experimental PostgreSQL option through gateway.storage_url or OMNISWITCH_DATABASE_URL
+    backs the persistent store (keys, logs, budgets, saved configuration, and response cache). A2A tasks
+    and runtime health remain process-local; production active-active readiness is not established.
   source_url: internal/store/store.go
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: kubernetes-manifests-helm
   gateway: omniswitch
   status: 'yes'
-  detail: Kustomize manifests (Deployment/Service/ConfigMap/Secret example/PVCs/Redis) plus a Helm chart;
-    no operator/CRDs/inference-aware routing.
+  detail: Kustomize manifests and Helm chart; no operator, CRDs, or inference-pool control plane.
   source_url: deploy
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: published-benchmarks
   gateway: omniswitch
-  status: partial
-  detail: In-repo Rust-WASM-vs-Go guardrail micro-benchmark only (BENCHMARKS.md, measured on a non-pinned
-    Windows laptop). No cross-gateway comparative run published yet -- this benchmark effort (bench/)
-    is that follow-up.
-  source_url: BENCHMARKS.md
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  status: 'no'
+  detail: Reproducible harness and guardrail microbenchmark code exist, but no cross-gateway measurement
+    campaign is published. No numeric performance claims are made here.
+  source_url: bench/README.md
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: license
   gateway: omniswitch
   status: 'yes'
   detail: Apache-2.0.
   source_url: LICENSE
-  verified_on: '2026-09-11'
-  version: v0.2.0-beta (commit 88a27c0)
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
 - capability: openai-compatible-chat
   gateway: litellm
   status: 'yes'
@@ -506,7 +525,7 @@ claims:
 - capability: semantic-cache
   gateway: litellm
   status: 'yes'
-  detail: Documented semantic caching (embedding-based similarity, per product page).
+  detail: Documented similarity caching (embedding-based similarity, per product page).
   source_url: https://www.litellm.ai/
   verified_on: '2026-09-11'
   version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
@@ -611,25 +630,28 @@ claims:
   version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
 - capability: mcp-oauth-token-exchange
   gateway: litellm
-  status: 'no'
-  detail: Per this project's internal comparison notes (comparison_iter7.md); not independently re-verified.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+  status: 'yes'
+  detail: MCP On-Behalf-Of v2 and OAuth delegation are documented; not an absence of token exchange. Product
+    documentation is distinct from the pinned benchmark image.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM product docs, audited 2026-10-09
 - capability: a2a-agent-card
   gateway: litellm
-  status: 'no'
-  detail: No A2A agent-card discovery found in available sources.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+  status: unknown
+  detail: The 2026-10-09 audit confirms A2A agent integration in LiteLLM. Its exact Agent Card discovery
+    endpoint was not independently verified; the prior absence claim is retired.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM product docs, audited 2026-10-09
 - capability: a2a-tasks
   gateway: litellm
-  status: 'no'
-  detail: No A2A task lifecycle found in available sources.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+  status: partial
+  detail: A2A agent integration is documented. Exact task polling/cancellation and streaming scope are
+    not independently verified by this register.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM product docs, audited 2026-10-09
 - capability: prompt-management
   gateway: litellm
   status: unknown
@@ -702,6 +724,7 @@ claims:
   source_url: https://github.com/BerriAI/litellm/blob/main/LICENSE
   verified_on: '2026-09-11'
   version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+  qualifier: license
 - capability: openai-compatible-chat
   gateway: litellm-rust
   status: 'no'
@@ -870,46 +893,49 @@ claims:
   version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
 - capability: mcp-stdio
   gateway: litellm-rust
-  status: 'no'
-  detail: Not on the Rust path at pin date.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
 - capability: mcp-federation
   gateway: litellm-rust
-  status: 'no'
-  detail: Not on the Rust path at pin date.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
 - capability: openapi-to-mcp
   gateway: litellm-rust
-  status: 'no'
-  detail: Not on the Rust path; parent proxy also marked no per internal notes.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
 - capability: mcp-oauth-token-exchange
   gateway: litellm-rust
-  status: 'no'
-  detail: Not on the Rust path.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+  status: unknown
+  detail: The parent Python proxy documents A2A/OAuth delegation; this does not establish the Rust-path
+    capability. Exact Rust-path coverage remains unverified.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM Rust path, audited 2026-10-09
 - capability: a2a-agent-card
   gateway: litellm-rust
-  status: 'no'
-  detail: Not documented anywhere in LiteLLM.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+  status: unknown
+  detail: The parent Python proxy documents A2A/OAuth delegation; this does not establish the Rust-path
+    capability. Exact Rust-path coverage remains unverified.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM Rust path, audited 2026-10-09
 - capability: a2a-tasks
   gateway: litellm-rust
-  status: 'no'
-  detail: Not documented anywhere in LiteLLM.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+  status: unknown
+  detail: The parent Python proxy documents A2A/OAuth delegation; this does not establish the Rust-path
+    capability. Exact Rust-path coverage remains unverified.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM Rust path, audited 2026-10-09
 - capability: prompt-management
   gateway: litellm-rust
   status: unknown
@@ -919,8 +945,8 @@ claims:
   version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
 - capability: evals
   gateway: litellm-rust
-  status: 'no'
-  detail: Not on the Rust path; parent proxy also unconfirmed.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
@@ -1012,9 +1038,9 @@ claims:
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: native-providers
   gateway: agentgateway
-  status: 'yes'
-  detail: OpenAI, Anthropic, Gemini, Bedrock and other backends documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: custom-openai-endpoint
@@ -1040,10 +1066,9 @@ claims:
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: conditional-routing
   gateway: agentgateway
-  status: partial
-  detail: Route policies and prompt enrichment described; expression-language conditional routing depth
-    not confirmed.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: circuit-breaker
@@ -1063,7 +1088,7 @@ claims:
 - capability: semantic-cache
   gateway: agentgateway
   status: 'no'
-  detail: Prior competitive research for this project found the homepage claim of semantic caching for
+  detail: Prior competitive research for this project found the homepage claim of similarity caching for
     agentgateway to be unsupported; caching is not a primary advertised surface for this project.
   source_url: https://www.solo.io/products/agentgateway
   verified_on: '2026-09-11'
@@ -1092,9 +1117,9 @@ claims:
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: oidc-jwt
   gateway: agentgateway
-  status: 'yes'
-  detail: JWT auth documented as part of agentgateway's auth/CEL RBAC/TLS stack.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: mtls
@@ -1103,28 +1128,28 @@ claims:
   detail: This project's internal comparison table lists agentgateway as 'No' for a combined SSO/SAML/SCIM/mTLS
     row, but agentgateway's own materials describe TLS as part of its auth stack; not resolved to a definitive
     mTLS-specific yes/no from primary sources.
-  source_url: docs/PORTKEY_COMPARISON.md
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: rbac-policy-cel
   gateway: agentgateway
-  status: 'yes'
-  detail: CEL RBAC documented as part of agentgateway's auth options.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: guardrails-builtin
   gateway: agentgateway
-  status: 'yes'
-  detail: Regex, OpenAI moderation, Bedrock Guardrails, Model Armor connectors documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: guardrail-webhooks
   gateway: agentgateway
-  status: 'yes'
-  detail: Custom webhook guardrail connectors documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: output-redaction
@@ -1150,9 +1175,9 @@ claims:
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: mcp-stdio
   gateway: agentgateway
-  status: 'yes'
-  detail: stdio, HTTP, and SSE/streamable-HTTP transports documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: mcp-federation
@@ -1171,46 +1196,44 @@ claims:
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: mcp-oauth-token-exchange
   gateway: agentgateway
-  status: 'yes'
-  detail: OAuth client flows / token exchange documented for MCP.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: a2a-agent-card
   gateway: agentgateway
-  status: 'yes'
-  detail: Native A2A discovery documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: a2a-tasks
   gateway: agentgateway
-  status: 'yes'
-  detail: Native A2A negotiation and task collaboration documented (this project's internal notes list
-    it as full task lifecycle, not independently re-verified against agentgateway's own A2A spec conformance
-    docs).
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: prompt-management
   gateway: agentgateway
-  status: 'no'
-  detail: Prompt enrichment at the route level only; no template/version management surface found.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: evals
   gateway: agentgateway
-  status: 'no'
-  detail: Not documented in available sources.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: otlp-export
   gateway: agentgateway
-  status: 'yes'
-  detail: OTel metrics/logs/traces documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: prometheus
@@ -1236,16 +1259,16 @@ claims:
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: sqlite-postgres
   gateway: agentgateway
-  status: 'no'
-  detail: No embedded SQLite/Postgres storage documented; state is primarily Kubernetes CRDs / xDS config.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: kubernetes-manifests-helm
   gateway: agentgateway
-  status: 'yes'
-  detail: Kubernetes Gateway API/controller integration and Helm charts documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
 - capability: published-benchmarks
@@ -1293,9 +1316,9 @@ claims:
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: native-providers
   gateway: bifrost
-  status: 'yes'
-  detail: '"12+" native provider integrations per this project''s internal comparison notes.'
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: custom-openai-endpoint
@@ -1336,14 +1359,14 @@ claims:
 - capability: exact-cache
   gateway: bifrost
   status: unknown
-  detail: Not confirmed independently of the semantic cache claim below.
+  detail: Not confirmed independently of the similarity cache claim below.
   source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: semantic-cache
   gateway: bifrost
   status: 'yes'
-  detail: Semantic caching documented to reuse responses for similar requests.
+  detail: Similarity caching documented to reuse responses for similar requests.
   source_url: https://docs.getbifrost.ai/overview
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
@@ -1377,10 +1400,9 @@ claims:
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: mtls
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost as 'No' for a combined SSO/SAML/SCIM/mTLS
-    row; not independently re-verified against Bifrost's current docs.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: rbac-policy-cel
@@ -1441,31 +1463,30 @@ claims:
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: openapi-to-mcp
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost as 'No' for OpenAPI-to-MCP conversion.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: mcp-oauth-token-exchange
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost as 'No' for MCP OAuth/token exchange.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: a2a-agent-card
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost as 'No' for A2A task lifecycle; no agent-card
-    discovery found either.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: a2a-tasks
   gateway: bifrost
-  status: 'no'
-  detail: Same as above.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: prompt-management
@@ -1477,9 +1498,9 @@ claims:
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: evals
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost as 'No' for evals/experiments.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: otlp-export
@@ -1513,26 +1534,24 @@ claims:
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: sqlite-postgres
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost as having no shared-state/HA store ("No").
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: kubernetes-manifests-helm
   gateway: bifrost
-  status: 'no'
-  detail: This project's internal comparison table lists Bifrost's release engineering as "Binary" with
-    no Helm chart.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: published-benchmarks
   gateway: bifrost
   status: 'yes'
-  detail: Publishes its own benchmark claiming ~11 microseconds overhead at 5k RPS on a t3.xlarge, and
-    a benchmarking repo (maximhq/bifrost-benchmarking); LiteLLM's third-party AIGatewayBench also measured
-    Bifrost.
-  source_url: https://www.getmaxim.ai/blog/bifrost-a-drop-in-llm-proxy-40x-faster-than-litellm/
+  detail: Benchmark tooling and vendor-published results are linked; measurements have not been reproduced
+    by this register.
+  source_url: https://github.com/maximhq/bifrost-benchmarking
   verified_on: '2026-09-11'
   version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
 - capability: license
@@ -1572,16 +1591,16 @@ claims:
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: native-providers
   gateway: portkey-oss
-  status: 'yes'
-  detail: Large managed provider/model catalog claimed (1600+ models).
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: custom-openai-endpoint
   gateway: portkey-oss
-  status: 'yes'
-  detail: Custom hosts documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: fallbacks-retries
@@ -1600,16 +1619,16 @@ claims:
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: conditional-routing
   gateway: portkey-oss
-  status: 'yes'
-  detail: Conditional routing documented as a core gateway feature.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: circuit-breaker
   gateway: portkey-oss
-  status: 'yes'
-  detail: Circuit breaker documented as a core gateway feature.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: exact-cache
@@ -1622,7 +1641,7 @@ claims:
 - capability: semantic-cache
   gateway: portkey-oss
   status: 'yes'
-  detail: Semantic cache documented ("Cache (Simple & Semantic)").
+  detail: Similarity cache documented ("Cache (Simple & Semantic)").
   source_url: https://portkey.ai/docs/product/ai-gateway
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
@@ -1659,11 +1678,9 @@ claims:
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: mtls
   gateway: portkey-oss
-  status: 'no'
-  detail: This project's internal comparison table lists a combined SSO/SAML/SCIM/mTLS row as "Yes" for
-    Portkey, but that appears to describe the hosted platform, not the OSS gateway; not independently
-    verified for the OSS gateway container used here.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: rbac-policy-cel
@@ -1675,16 +1692,16 @@ claims:
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: guardrails-builtin
   gateway: portkey-oss
-  status: 'yes'
-  detail: Integrated guardrails documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: guardrail-webhooks
   gateway: portkey-oss
-  status: 'yes'
-  detail: Custom webhook guardrail checks documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: output-redaction
@@ -1724,45 +1741,45 @@ claims:
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: openapi-to-mcp
   gateway: portkey-oss
-  status: 'no'
-  detail: This project's internal comparison table lists Portkey as "Partial" for OpenAPI conversion;
-    not independently re-verified, kept as no/unconfirmed here to avoid overclaiming.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: mcp-oauth-token-exchange
   gateway: portkey-oss
-  status: 'no'
-  detail: This project's internal comparison table lists Portkey as "No" for MCP OAuth/token exchange.
-  source_url: comparison_iter7.md
-  verified_on: '2026-09-11'
-  version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
+  status: partial
+  detail: Portkey documents MCP OAuth 2.1 with PKCE. This does not independently confirm RFC 8693 token
+    exchange in the standalone OSS gateway.
+  source_url: https://portkey.ai/docs/product/mcp-gateway.md
+  verified_on: '2026-10-09'
+  version: Portkey MCP product docs, audited 2026-10-09
 - capability: a2a-agent-card
   gateway: portkey-oss
-  status: 'no'
-  detail: No A2A agent-card discovery found in available sources.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: a2a-tasks
   gateway: portkey-oss
-  status: 'no'
-  detail: This project's internal comparison table lists Portkey as "No" for A2A task lifecycle.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: prompt-management
   gateway: portkey-oss
-  status: 'yes'
-  detail: Prompt templates/releases/experiments documented at the platform level.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: evals
   gateway: portkey-oss
-  status: 'yes'
-  detail: Full evals/experiments documented at the platform level.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: otlp-export
@@ -1775,9 +1792,8 @@ claims:
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
 - capability: prometheus
   gateway: portkey-oss
-  status: 'no'
-  detail: This project's internal comparison table lists a Prometheus-style claim as false for a similar
-    OSS gateway (agentgateway); for Portkey OSS this is unconfirmed and kept conservative.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
@@ -1906,7 +1922,7 @@ claims:
   gateway: helicone
   status: unknown
   detail: '"Intelligent caching" is mentioned in some Helicone materials but not confirmed as embedding-based
-    semantic caching in primary docs.'
+    similarity caching in primary docs.'
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
@@ -2018,15 +2034,15 @@ claims:
   version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
 - capability: a2a-agent-card
   gateway: helicone
-  status: 'no'
-  detail: No A2A support found in available sources.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
 - capability: a2a-tasks
   gateway: helicone
-  status: 'no'
-  detail: No A2A support found in available sources.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
@@ -2090,8 +2106,8 @@ claims:
   version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
 - capability: published-benchmarks
   gateway: helicone
-  status: 'no'
-  detail: No formal published overhead benchmark found for the Helicone AI Gateway.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
@@ -2134,9 +2150,9 @@ claims:
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: native-providers
   gateway: kong-ai-gateway
-  status: partial
-  detail: '"Major providers only" per this project''s internal comparison notes.'
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: custom-openai-endpoint
@@ -2178,15 +2194,16 @@ claims:
 - capability: exact-cache
   gateway: kong-ai-gateway
   status: unknown
-  detail: Not confirmed independently of the semantic cache (separate plugin) below.
+  detail: Not confirmed independently of the similarity cache (separate plugin) below.
   source_url: ''
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: semantic-cache
   gateway: kong-ai-gateway
   status: 'no'
-  detail: AI Semantic Cache is a separate plugin from AI Proxy; licensing/tier for that plugin was not
-    confirmed as OSS at pin date, so treat as not available in the OSS-only harness cell used here.
+  detail: embedding-based AI cache is a separate plugin from AI Proxy; licensing/tier for that plugin
+    was not confirmed as OSS at pin date, so treat as not available in the OSS-only harness cell used
+    here.
   source_url: https://developer.konghq.com/plugins/ai-semantic-cache/
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
@@ -2200,10 +2217,12 @@ claims:
 - capability: rate-limiting
   gateway: kong-ai-gateway
   status: partial
-  detail: Standard Kong rate-limiting plugins are OSS; token-aware AI Rate Limiting Advanced is Enterprise.
-  source_url: https://developer.konghq.com/plugins/
-  verified_on: '2026-09-11'
-  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+  detail: Request-count plugins are available in Kong Gateway OSS; token-aware AI Rate Limiting Advanced
+    is an Enterprise capability, not part of the pinned OSS cell.
+  source_url: https://developer.konghq.com/plugins/ai-rate-limiting-advanced/changelog/
+  verified_on: '2026-10-09'
+  version: Kong AI Rate Limiting Advanced docs, audited 2026-10-09
+  qualifier: enterprise
 - capability: api-keys
   gateway: kong-ai-gateway
   status: 'yes'
@@ -2220,11 +2239,9 @@ claims:
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: mtls
   gateway: kong-ai-gateway
-  status: 'yes'
-  detail: This project's internal comparison table lists Kong as "Yes" for a combined SSO/SAML/SCIM/mTLS
-    row; Kong Gateway's mtls-auth plugin is documented separately. Enterprise-vs-OSS boundary for the
-    specific plugin was not independently re-verified.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: rbac-policy-cel
@@ -2289,33 +2306,39 @@ claims:
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: openapi-to-mcp
   gateway: kong-ai-gateway
-  status: 'no'
-  detail: This project's internal comparison table lists Kong as "No" for OpenAPI-to-MCP conversion.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: mcp-oauth-token-exchange
   gateway: kong-ai-gateway
-  status: 'no'
-  detail: This project's internal comparison table lists Kong as "No" for MCP OAuth client flows/token
-    exchange.
-  source_url: comparison_iter7.md
-  verified_on: '2026-09-11'
-  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+  status: 'yes'
+  detail: Enterprise OpenID Connect plugin documents RFC 8693 access-token exchange from Kong 3.14. Product
+    documentation does not establish availability in the pinned Kong 3.9 OSS cell.
+  source_url: https://developer.konghq.com/plugins/openid-connect/
+  verified_on: '2026-10-09'
+  version: Kong AI Gateway 3.14 product docs
+  qualifier: enterprise
 - capability: a2a-agent-card
   gateway: kong-ai-gateway
-  status: 'no'
-  detail: No A2A support found in available sources.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+  status: unknown
+  detail: AI Gateway Enterprise 3.14 A2A Proxy documents Agent Card URL rewriting. Exact discovery endpoint
+    coverage is not independently verified; this is not an absence claim or a result for the pinned 3.9
+    OSS cell.
+  source_url: https://developer.konghq.com/plugins/ai-a2a-proxy/
+  verified_on: '2026-10-09'
+  version: Kong AI Gateway 3.14 product docs
+  qualifier: enterprise
 - capability: a2a-tasks
   gateway: kong-ai-gateway
-  status: 'no'
-  detail: This project's internal comparison table lists Kong as "No" for A2A task lifecycle.
-  source_url: comparison_iter7.md
-  verified_on: '2026-09-11'
-  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+  status: partial
+  detail: AI Gateway Enterprise 3.14 adds an A2A proxy. Task behavior is delegated to agents; exact task-method
+    coverage is not independently verified. This is not a result for the pinned 3.9 OSS harness cell.
+  source_url: https://developer.konghq.com/plugins/ai-a2a-proxy/
+  verified_on: '2026-10-09'
+  version: Kong AI Gateway 3.14 product docs
+  qualifier: enterprise
 - capability: prompt-management
   gateway: kong-ai-gateway
   status: unknown
@@ -2325,9 +2348,9 @@ claims:
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: evals
   gateway: kong-ai-gateway
-  status: 'no'
-  detail: This project's internal comparison table lists Kong as "No" for evals/experiments.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: otlp-export
@@ -2347,10 +2370,9 @@ claims:
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: dashboard
   gateway: kong-ai-gateway
-  status: 'no'
-  detail: This project's internal comparison table lists Kong's control plane as "Kong" (i.e. Konnect,
-    a separate managed product), not a bundled OSS dashboard.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
 - capability: hot-reload
@@ -2385,7 +2407,7 @@ claims:
   gateway: kong-ai-gateway
   status: 'yes'
   detail: Apache-2.0 for Kong Gateway OSS; several AI Gateway plugins used for full parity (AI Proxy Advanced,
-    AI Semantic Cache tier, AI Rate Limiting Advanced, AI Semantic Prompt Guard) are Enterprise-licensed
+    embedding-based AI cache tier, AI Rate Limiting Advanced, AI Semantic Prompt Guard) are Enterprise-licensed
     and are marked 'Enterprise, not tested' in this harness rather than benchmarked.
   source_url: https://github.com/Kong/kong
   verified_on: '2026-09-11'
@@ -2472,7 +2494,7 @@ claims:
 - capability: semantic-cache
   gateway: tensorzero
   status: unknown
-  detail: Documented caching is request-level; embedding-based semantic caching not confirmed.
+  detail: Documented caching is request-level; embedding-based similarity caching not confirmed.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
@@ -2584,15 +2606,15 @@ claims:
   version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
 - capability: a2a-agent-card
   gateway: tensorzero
-  status: 'no'
-  detail: No A2A support found in available sources.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
 - capability: a2a-tasks
   gateway: tensorzero
-  status: 'no'
-  detail: No A2A support found in available sources.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
@@ -2688,12 +2710,12 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: responses-api
   gateway: envoy-ai-gateway
-  status: unknown
-  detail: Not confirmed in available sources.
-  source_url: ''
-  verified_on: '2026-09-11'
-  version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
-    sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
+  status: partial
+  detail: Responses API support is documented from v0.5. Exact hosted-API feature coverage was not independently
+    verified.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router v0.5+ product docs
 - capability: anthropic-messages-api
   gateway: envoy-ai-gateway
   status: unknown
@@ -2760,11 +2782,9 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: semantic-cache
   gateway: envoy-ai-gateway
-  status: 'no'
-  detail: This project's own homepage previously claimed 'no built-in semantic caching' for this gateway
-    ("Semantic Caching" false in the earlier comparison), matching the absence of any caching claim in
-    this gateway's own capability docs.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
@@ -2779,11 +2799,11 @@ claims:
 - capability: rate-limiting
   gateway: envoy-ai-gateway
   status: 'yes'
-  detail: Usage-based, token-aware rate limiting and quota-aware routing documented.
-  source_url: https://aigateway.envoyproxy.io/docs/capabilities/
-  verified_on: '2026-09-11'
-  version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
-    sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
+  detail: Quota-aware token/usage limits and routing are documented for the Kubernetes/Envoy-native project,
+    now named Agent Router.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router product docs, audited 2026-10-09
 - capability: api-keys
   gateway: envoy-ai-gateway
   status: unknown
@@ -2878,22 +2898,20 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: openapi-to-mcp
   gateway: envoy-ai-gateway
-  status: 'yes'
-  detail: This project's internal comparison table lists this gateway (as agentgateway's sibling ecosystem
-    entry / envoy-ai-gateway) as "Yes" for OpenAPI-to-MCP conversion; not independently re-verified against
-    this project's current docs.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: mcp-oauth-token-exchange
   gateway: envoy-ai-gateway
-  status: 'yes'
-  detail: OAuth authentication for the MCP gateway documented.
-  source_url: https://aigateway.envoyproxy.io/docs/capabilities/
-  verified_on: '2026-09-11'
-  version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
-    sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
+  status: partial
+  detail: Agent Router documents credential passthrough/delegation. That is not independently verified
+    as RFC 8693 token exchange; OAuth labels must not conflate the two mechanisms.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router product docs, audited 2026-10-09
 - capability: a2a-agent-card
   gateway: envoy-ai-gateway
   status: 'no'
@@ -2904,8 +2922,8 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: a2a-tasks
   gateway: envoy-ai-gateway
-  status: 'no'
-  detail: Same as above.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
@@ -2945,9 +2963,8 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: dashboard
   gateway: envoy-ai-gateway
-  status: 'no'
-  detail: No bundled dashboard found; this is a Kubernetes control-plane/CRD project, not a single binary
-    with a UI.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
@@ -2963,8 +2980,8 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: sqlite-postgres
   gateway: envoy-ai-gateway
-  status: 'no'
-  detail: State is Kubernetes CRDs / Envoy xDS config, not an embedded SQL database.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
@@ -2980,8 +2997,8 @@ claims:
     sha256:ad0d4ffe2924dd3f46414687e9331f5fa947b9f2c9db735accaad9f2275aff56
 - capability: published-benchmarks
   gateway: envoy-ai-gateway
-  status: 'no'
-  detail: No published cross-gateway overhead benchmark found for this project specifically.
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
   source_url: ''
   verified_on: '2026-09-11'
   version: Agent Router (formerly Envoy AI Gateway); aigw CLI image docker.io/envoyproxy/ai-gateway-cli:latest
@@ -3008,24 +3025,21 @@ claims:
 - capability: embeddings
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: responses-api
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: anthropic-messages-api
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3039,8 +3053,7 @@ claims:
 - capability: custom-openai-endpoint
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3054,8 +3067,7 @@ claims:
 - capability: weighted-load-balancing
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3069,8 +3081,7 @@ claims:
 - capability: circuit-breaker
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3085,7 +3096,7 @@ claims:
 - capability: semantic-cache
   gateway: openrouter
   status: 'no'
-  detail: Documented caching is exact-match response caching, not embedding-based semantic caching.
+  detail: Documented caching is exact-match response caching, not embedding-based similarity caching.
   source_url: https://openrouter.ai/docs/guides/features/response-caching
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3113,176 +3124,154 @@ claims:
 - capability: oidc-jwt
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mtls
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rbac-policy-cel
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrails-builtin
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrail-webhooks
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: output-redaction
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: streaming-guardrails
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-http
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-stdio
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-federation
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: openapi-to-mcp
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-oauth-token-exchange
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-agent-card
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-tasks
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prompt-management
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: evals
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: otlp-export
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prometheus
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: dashboard
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: hot-reload
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: sqlite-postgres
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: kubernetes-manifests-helm
   gateway: openrouter
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3310,40 +3299,35 @@ claims:
 - capability: embeddings
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: responses-api
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: anthropic-messages-api
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: native-providers
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: custom-openai-endpoint
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3357,24 +3341,21 @@ claims:
 - capability: weighted-load-balancing
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: conditional-routing
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: circuit-breaker
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3395,9 +3376,10 @@ claims:
 - capability: budgets-quotas
   gateway: cloudflare-ai-gateway
   status: 'yes'
-  detail: Spend limits (cumulative dollar caps) documented separately from request-count rate limiting.
-  source_url: https://developers.cloudflare.com/ai-gateway/changelog/
-  verified_on: '2026-09-11'
+  detail: Dollar spend limits support rolling/fixed windows and model, provider, or metadata scopes when
+    pricing is known. Enforcement is eventually consistent and separate from request-count rate limiting.
+  source_url: https://developers.cloudflare.com/ai-gateway/features/spend-limits/
+  verified_on: '2026-10-09'
   version: hosted service, n/a
 - capability: rate-limiting
   gateway: cloudflare-ai-gateway
@@ -3409,32 +3391,28 @@ claims:
 - capability: api-keys
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: oidc-jwt
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mtls
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rbac-policy-cel
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3448,96 +3426,84 @@ claims:
 - capability: guardrail-webhooks
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: output-redaction
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: streaming-guardrails
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-http
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-stdio
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-federation
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: openapi-to-mcp
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-oauth-token-exchange
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-agent-card
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-tasks
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prompt-management
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: evals
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3551,40 +3517,35 @@ claims:
 - capability: prometheus
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: dashboard
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: hot-reload
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: sqlite-postgres
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: kubernetes-manifests-helm
   gateway: cloudflare-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3612,40 +3573,35 @@ claims:
 - capability: embeddings
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: responses-api
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: anthropic-messages-api
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: native-providers
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: custom-openai-endpoint
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3659,24 +3615,21 @@ claims:
 - capability: weighted-load-balancing
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: conditional-routing
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: circuit-breaker
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3690,7 +3643,7 @@ claims:
 - capability: semantic-cache
   gateway: vercel-ai-gateway
   status: unknown
-  detail: Documented caching is automatic/prompt caching; embedding-based semantic caching not confirmed.
+  detail: Documented caching is automatic/prompt caching; embedding-based similarity caching not confirmed.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3718,128 +3671,112 @@ claims:
 - capability: oidc-jwt
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mtls
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rbac-policy-cel
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrails-builtin
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrail-webhooks
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: output-redaction
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: streaming-guardrails
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-http
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-stdio
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-federation
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: openapi-to-mcp
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-oauth-token-exchange
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-agent-card
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-tasks
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prompt-management
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: evals
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3853,40 +3790,35 @@ claims:
 - capability: prometheus
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: dashboard
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: hot-reload
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: sqlite-postgres
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: kubernetes-manifests-helm
   gateway: vercel-ai-gateway
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3914,39 +3846,35 @@ claims:
 - capability: embeddings
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: responses-api
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: anthropic-messages-api
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: native-providers
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Large managed provider/model catalog (1600+ models claimed).
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: custom-openai-endpoint
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3960,23 +3888,21 @@ claims:
 - capability: weighted-load-balancing
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: conditional-routing
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Conditional routing and canary deploys documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: circuit-breaker
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -3990,29 +3916,29 @@ claims:
 - capability: semantic-cache
   gateway: portkey-cloud
   status: 'yes'
-  detail: Semantic cache documented at the platform level.
+  detail: Similarity cache documented at the platform level.
   source_url: https://portkey.ai/docs/product/ai-gateway
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: budgets-quotas
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Cost/token budgets and time-window rate limits documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rate-limiting
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Time-window rate limits documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: api-keys
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Virtual keys and workspace/project key management.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: oidc-jwt
@@ -4025,164 +3951,147 @@ claims:
 - capability: mtls
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rbac-policy-cel
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrails-builtin
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Deterministic, AI/partner, and custom guardrails with deny/log/dataset/retry/fallback actions
-    documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrail-webhooks
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: output-redaction
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: streaming-guardrails
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-http
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-stdio
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-federation
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: openapi-to-mcp
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-oauth-token-exchange
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-agent-card
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-tasks
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prompt-management
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Templates, partials, releases/publish workflow, experiments documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: evals
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Full evals/experiments documented.
-  source_url: comparison_iter7.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: otlp-export
   gateway: portkey-cloud
-  status: 'yes'
-  detail: OTel ingestion documented.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prometheus
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: dashboard
   gateway: portkey-cloud
-  status: 'yes'
-  detail: Hosted analytics/logs/traces dashboard.
-  source_url: docs/PORTKEY_COMPARISON.md
+  status: unknown
+  detail: Prior claim lacked independent primary-source evidence; capability not verified by this register.
+  source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: hot-reload
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: sqlite-postgres
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: kubernetes-manifests-helm
   gateway: portkey-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4210,72 +4119,63 @@ claims:
 - capability: embeddings
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: responses-api
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: anthropic-messages-api
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: native-providers
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: custom-openai-endpoint
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: fallbacks-retries
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: weighted-load-balancing
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: conditional-routing
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: circuit-breaker
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4289,16 +4189,14 @@ claims:
 - capability: semantic-cache
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: budgets-quotas
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4312,152 +4210,133 @@ claims:
 - capability: api-keys
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: oidc-jwt
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mtls
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rbac-policy-cel
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrails-builtin
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: guardrail-webhooks
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: output-redaction
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: streaming-guardrails
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-http
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-stdio
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-federation
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: openapi-to-mcp
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-oauth-token-exchange
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-agent-card
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-tasks
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prompt-management
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: evals
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: otlp-export
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prometheus
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4471,24 +4350,21 @@ claims:
 - capability: hot-reload
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: sqlite-postgres
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: kubernetes-manifests-helm
   gateway: helicone-cloud
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4516,40 +4392,35 @@ claims:
 - capability: embeddings
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: responses-api
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: anthropic-messages-api
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: native-providers
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: custom-openai-endpoint
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4564,47 +4435,42 @@ claims:
 - capability: weighted-load-balancing
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: conditional-routing
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: circuit-breaker
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: exact-cache
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: semantic-cache
   gateway: kong-konnect
   status: 'yes'
-  detail: AI Semantic Cache manageable from Konnect.
+  detail: embedding-based AI cache manageable from Konnect.
   source_url: https://developer.konghq.com/plugins/ai-semantic-cache/
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: budgets-quotas
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4618,32 +4484,28 @@ claims:
 - capability: api-keys
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: oidc-jwt
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mtls
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: rbac-policy-cel
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4658,112 +4520,98 @@ claims:
 - capability: guardrail-webhooks
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: output-redaction
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: streaming-guardrails
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-http
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-stdio
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-federation
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: openapi-to-mcp
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: mcp-oauth-token-exchange
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-agent-card
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: a2a-tasks
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prompt-management
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: evals
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: otlp-export
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: prometheus
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4777,24 +4625,21 @@ claims:
 - capability: hot-reload
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: sqlite-postgres
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
 - capability: kubernetes-manifests-helm
   gateway: kong-konnect
   status: unknown
-  detail: 'Managed service: capability-map only, no same-host benchmark run. Not verified in available
-    sources.'
+  detail: Managed service capability entry; no same-host benchmark run. Not verified in available sources.
   source_url: ''
   verified_on: '2026-09-11'
   version: hosted service, n/a
@@ -4812,4 +4657,580 @@ claims:
     Konnect and several AI Gateway plugins are Enterprise-licensed).
   source_url: https://developer.konghq.com/ai-gateway/
   verified_on: '2026-09-11'
+  version: hosted service, n/a
+- capability: self-hosted
+  gateway: omniswitch
+  status: 'yes'
+  detail: Self-hosted Apache-2.0 Go binary with SQLite by default; no SaaS control plane required.
+  source_url: cmd/gateway/main.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+- capability: token-rate-limits
+  gateway: omniswitch
+  status: 'yes'
+  detail: Token-per-window quotas with preflight reservations, reported-usage reconciliation, rejection
+    headers, and local or Redis counters.
+  source_url: internal/gateway/middleware.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+- capability: image-generation
+  gateway: omniswitch
+  status: partial
+  detail: POST /v1/images/generations for image-capable providers; prompt guardrails and metadata logs.
+    No image edits/variations or pixel-content inspection.
+  source_url: internal/gateway/images.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+- capability: audio-transcriptions
+  gateway: omniswitch
+  status: partial
+  detail: POST /v1/audio/transcriptions for audio-capable providers, with bounded multipart uploads and
+    JSON transcripts. No realtime audio or waveform-content inspection.
+  source_url: internal/gateway/audio.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+- capability: audio-speech
+  gateway: omniswitch
+  status: partial
+  detail: POST /v1/audio/speech returns provider audio bytes with text-input guardrails and metadata logs.
+    No realtime audio.
+  source_url: internal/gateway/audio.go
+  verified_on: '2026-10-09'
+  version: v0.2.0 (release candidate; integration-gated)
+- capability: self-hosted
+  gateway: litellm
+  status: 'yes'
+  detail: Self-hosted Python proxy; core and Enterprise feature/license boundaries differ.
+  source_url: https://docs.litellm.ai/docs/enterprise
+  verified_on: '2026-10-09'
+  version: LiteLLM docs, audited 2026-10-09
+  qualifier: license
+- capability: token-rate-limits
+  gateway: litellm
+  status: 'yes'
+  detail: RPM/TPM and spend controls are documented for the proxy; this is not a Rust-path feature assertion.
+  source_url: https://docs.litellm.ai/release_notes/
+  verified_on: '2026-10-09'
+  version: LiteLLM docs, audited 2026-10-09
+- capability: image-generation
+  gateway: litellm
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+- capability: audio-transcriptions
+  gateway: litellm
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+- capability: audio-speech
+  gateway: litellm
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ghcr.io/berriai/litellm:main-stable @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf
+- capability: self-hosted
+  gateway: litellm-rust
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+- capability: token-rate-limits
+  gateway: litellm-rust
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+- capability: image-generation
+  gateway: litellm-rust
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+- capability: audio-transcriptions
+  gateway: litellm-rust
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+- capability: audio-speech
+  gateway: litellm-rust
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: 'ghcr.io/berriai/litellm:main-stable (rust: true beta flag) @ sha256:a3715fa7ad8387941ab697259bd2881d68931657247a41984f90fae6d11c62bf'
+- capability: self-hosted
+  gateway: agentgateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+- capability: token-rate-limits
+  gateway: agentgateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+- capability: image-generation
+  gateway: agentgateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+- capability: audio-transcriptions
+  gateway: agentgateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+- capability: audio-speech
+  gateway: agentgateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: v1.5.0 @ ghcr.io/agentgateway/agentgateway:latest sha256:bf2f339ef326d32def2aaeb44b1b4549801293c19b89e764a4228667d97d9896
+- capability: self-hosted
+  gateway: bifrost
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
+- capability: token-rate-limits
+  gateway: bifrost
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
+- capability: image-generation
+  gateway: bifrost
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
+- capability: audio-transcriptions
+  gateway: bifrost
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
+- capability: audio-speech
+  gateway: bifrost
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: ~v1.6.x @ docker.io/maximhq/bifrost:latest sha256:9e65eb4d0b292c25aaf46d194c705344f19c833a29e30155038bbe551eac7245
+- capability: self-hosted
+  gateway: portkey-oss
+  status: 'yes'
+  detail: Open-source self-hosted gateway. Portkey was acquired by Palo Alto Networks; OSS gateway and
+    managed/Enterprise features must be distinguished.
+  source_url: https://github.com/Portkey-AI/gateway
+  verified_on: '2026-10-09'
+  version: Portkey OSS docs, audited 2026-10-09
+- capability: token-rate-limits
+  gateway: portkey-oss
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
+- capability: image-generation
+  gateway: portkey-oss
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
+- capability: audio-transcriptions
+  gateway: portkey-oss
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
+- capability: audio-speech
+  gateway: portkey-oss
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/portkeyai/gateway:latest sha256:97f094d9c8a764cbfaa2a7138c0017b247ca923bb06db1b4c13b7f8a33b5200d
+- capability: self-hosted
+  gateway: helicone
+  status: 'yes'
+  detail: Self-hosted gateway source remains available; Helicone states the gateway is in maintenance
+    mode after joining Mintlify.
+  source_url: https://www.helicone.ai/blog/joining-mintlify
+  verified_on: '2026-10-09'
+  version: Helicone announcement, audited 2026-10-09
+- capability: token-rate-limits
+  gateway: helicone
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
+- capability: image-generation
+  gateway: helicone
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
+- capability: audio-transcriptions
+  gateway: helicone
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
+- capability: audio-speech
+  gateway: helicone
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/helicone/ai-gateway:latest sha256:bdf1f7c4f3aa177b8a03a02d461c744733c0292afd95d3185337d9fc2c346af6
+- capability: self-hosted
+  gateway: kong-ai-gateway
+  status: 'yes'
+  detail: Kong Gateway is self-hostable; advanced AI Gateway features have separate Enterprise/Konnect
+    boundaries.
+  source_url: https://developer.konghq.com/gateway/
+  verified_on: '2026-10-09'
+  version: Kong product docs, audited 2026-10-09
+  qualifier: license
+- capability: token-rate-limits
+  gateway: kong-ai-gateway
+  status: 'yes'
+  detail: Token-aware AI Rate Limiting Advanced is documented as Enterprise; not part of the pinned Gateway
+    OSS cell.
+  source_url: https://developer.konghq.com/plugins/ai-rate-limiting-advanced/changelog/
+  verified_on: '2026-10-09'
+  version: Kong plugin docs, audited 2026-10-09
+  qualifier: enterprise
+- capability: image-generation
+  gateway: kong-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+- capability: audio-transcriptions
+  gateway: kong-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+- capability: audio-speech
+  gateway: kong-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: Kong Gateway 3.9 (OSS) + ai-proxy plugin @ docker.io/library/kong:3.9 sha256:ca71c5591eabaf18de96d26b7eed5e2fdb590dac141e467a779c38017e5bdf81
+- capability: self-hosted
+  gateway: tensorzero
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
+- capability: token-rate-limits
+  gateway: tensorzero
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
+- capability: image-generation
+  gateway: tensorzero
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
+- capability: audio-transcriptions
+  gateway: tensorzero
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
+- capability: audio-speech
+  gateway: tensorzero
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: latest @ docker.io/tensorzero/gateway:latest sha256:c939db4f27e41aa3a37a87909430a0c8f898f9c952f402dcbdc17e1708597bcb
+- capability: self-hosted
+  gateway: envoy-ai-gateway
+  status: 'yes'
+  detail: Self-hosted Kubernetes/Envoy-native Agent Router (formerly Envoy AI Gateway), not a standalone
+    embedded-console binary.
+  source_url: https://github.com/theagentrouter/agent-router
+  verified_on: '2026-10-09'
+  version: Agent Router docs, audited 2026-10-09
+- capability: token-rate-limits
+  gateway: envoy-ai-gateway
+  status: 'yes'
+  detail: Quota-aware token/usage limits and routing are documented.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router product docs, audited 2026-10-09
+- capability: image-generation
+  gateway: envoy-ai-gateway
+  status: unknown
+  detail: The v1.0 audit confirms multimodal/audio support; this exact endpoint and response scope were
+    not independently verified.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router v1.0 product docs
+- capability: audio-transcriptions
+  gateway: envoy-ai-gateway
+  status: unknown
+  detail: The v1.0 audit confirms multimodal/audio support; this exact endpoint and response scope were
+    not independently verified.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router v1.0 product docs
+- capability: audio-speech
+  gateway: envoy-ai-gateway
+  status: unknown
+  detail: The v1.0 audit confirms multimodal/audio support; this exact endpoint and response scope were
+    not independently verified.
+  source_url: https://theagentrouter.ai/release-notes/
+  verified_on: '2026-10-09'
+  version: Agent Router v1.0 product docs
+- capability: self-hosted
+  gateway: openrouter
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: token-rate-limits
+  gateway: openrouter
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: image-generation
+  gateway: openrouter
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-transcriptions
+  gateway: openrouter
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-speech
+  gateway: openrouter
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: self-hosted
+  gateway: cloudflare-ai-gateway
+  status: 'no'
+  detail: Cloudflare AI Gateway is a managed service, not a self-hosted gateway distribution.
+  source_url: https://developers.cloudflare.com/ai-gateway/features/
+  verified_on: '2026-10-09'
+  version: Cloudflare docs, audited 2026-10-09
+- capability: token-rate-limits
+  gateway: cloudflare-ai-gateway
+  status: unknown
+  detail: The audit verifies request-count and spend limits; token-per-window quota enforcement was not
+    independently verified.
+  source_url: https://developers.cloudflare.com/ai-gateway/features/rate-limiting/
+  verified_on: '2026-10-09'
+  version: Cloudflare docs, audited 2026-10-09
+- capability: image-generation
+  gateway: cloudflare-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-transcriptions
+  gateway: cloudflare-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-speech
+  gateway: cloudflare-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: self-hosted
+  gateway: vercel-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: token-rate-limits
+  gateway: vercel-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: image-generation
+  gateway: vercel-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-transcriptions
+  gateway: vercel-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-speech
+  gateway: vercel-ai-gateway
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: self-hosted
+  gateway: portkey-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: token-rate-limits
+  gateway: portkey-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: image-generation
+  gateway: portkey-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-transcriptions
+  gateway: portkey-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-speech
+  gateway: portkey-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: self-hosted
+  gateway: helicone-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: token-rate-limits
+  gateway: helicone-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: image-generation
+  gateway: helicone-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-transcriptions
+  gateway: helicone-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-speech
+  gateway: helicone-cloud
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: self-hosted
+  gateway: kong-konnect
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: token-rate-limits
+  gateway: kong-konnect
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: image-generation
+  gateway: kong-konnect
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-transcriptions
+  gateway: kong-konnect
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
+  version: hosted service, n/a
+- capability: audio-speech
+  gateway: kong-konnect
+  status: unknown
+  detail: This capability/edition was not independently verified in the dated audit.
+  source_url: ''
+  verified_on: '2026-10-09'
   version: hosted service, n/a
