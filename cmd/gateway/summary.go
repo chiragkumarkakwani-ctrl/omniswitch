@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sort"
 	"strings"
 
@@ -8,7 +9,20 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
+
+func runtimeStorageSummary(ctx context.Context, st *store.Store) (map[string]any, error) {
+	status, err := st.SchemaStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"driver":             st.Driver(),
+		"schema_version":     status.Current,
+		"pending_migrations": status.Pending,
+	}, nil
+}
 
 func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry) map[string]any {
 	providerNames := []string{}
@@ -20,10 +34,12 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 	}
 	return map[string]any{
 		"config_path": settings.configPath,
+		"retention":   retentionPolicySummary(settings.retention),
 		"gateway": map[string]any{
 			"listen":                   settings.listenAddr,
 			"policy_dir":               settings.policyDir,
 			"auth_enabled":             settings.authEnabled,
+			"migrate_on_start":         settings.migrateOnStart,
 			"cache_threshold":          settings.cacheThreshold,
 			"cache_ttl":                settings.cacheTTL.String(),
 			"cache_scope":              settings.cacheScope,

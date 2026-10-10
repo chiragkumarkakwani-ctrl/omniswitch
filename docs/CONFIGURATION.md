@@ -21,6 +21,7 @@ kind: GatewayConfig
 gateway:
   listen: ":8080"
   data_dir: ".omniswitch"
+  migrate_on_start: true
   auth: true
   cache_threshold: 0.95
   cache_ttl: 24h
@@ -333,6 +334,17 @@ without it. The `OMNISWITCH_DATABASE_URL` environment variable always takes
 precedence over `gateway.storage_url`, so an operator can override storage
 without editing the config file.
 
+`gateway.migrate_on_start` defaults to `true`. Startup applies pending versioned
+schema migrations, adopting existing v0.1.0 data without rewriting it. Each
+version is transactional; PostgreSQL uses an advisory lock across the whole run
+so replicas do not race. Set `gateway.migrate_on_start: false` or
+`OMNISWITCH_MIGRATE_ON_START=false` to open the store without changing its schema.
+When migrations are pending, `/readyz` returns HTTP 503 with
+`reason: "schema_pending"` and the `current` and `latest` schema versions.
+Bootstrap key initialization is deferred until the schema is current. Re-enable startup
+migrations before sending traffic. `GET /api/config` reports
+`storage{driver, schema_version, pending_migrations}` without exposing the DSN.
+
 `gateway.alerts` sends threshold-based notifications (for example, elevated
 error rates) to a webhook and/or Slack incoming webhook URL:
 
@@ -351,6 +363,70 @@ guardrails when `OMNISWITCH_CONFIG` hot-reload is enabled.
 Out-of-process HTTP authorization is not supported; the unused external
 callout config type has been removed. Use `authorization.rules` (CEL) instead.
 Unknown fields fail strict YAML/JSON parsing.
+
+## Data Retention
+
+Retention is enabled by default: ordinary request logs, guardrail events, and
+limited/denied requests keep 30 days; logged payloads and shadow requests keep
+7 days. Older data is removed automatically. Set a policy to `0` to keep that
+class forever. Payloads can only survive while their request-log row survives.
+Request logs with `status: limited` or `decision: DENY` use the independent
+`limited_and_denied` policy, not the ordinary `request_logs` policy.
+
+All fields below take effect at startup and require a restart after edits.
+Environment values override the config file. Durations accept whole days
+(`30d`), Go duration strings (`168h`, `1h`, `500ms`), or `0`; invalid values
+fail startup rather than silently falling back to a deletion policy.
+
+| Field | Default | Environment override | Effect |
+|---|---|---|---|
+| `retention` | Enabled with the defaults below | — | Top-level retention configuration block; restart required. |
+| `retention.request_logs` | `30d` | `OMNISWITCH_RETENTION_REQUEST_LOGS` | Retention for ordinary request-log rows; `0` keeps them forever. |
+| `retention.payloads` | `7d` | `OMNISWITCH_RETENTION_PAYLOADS` | Clears `request_body` and `response_body`, keeping the row; `0` preserves bodies while their row exists. |
+| `retention.guardrail_events` | `30d` | `OMNISWITCH_RETENTION_GUARDRAIL_EVENTS` | Retention for guardrail-event rows; `0` keeps them forever. |
+| `retention.shadow_requests` | `7d` | `OMNISWITCH_RETENTION_SHADOW_REQUESTS` | Retention for shadow-request rows; `0` keeps them forever. |
+| `retention.limited_and_denied` | `30d` | `OMNISWITCH_RETENTION_LIMITED_AND_DENIED` | Retention for request logs with status `limited` or decision `DENY`; `0` keeps them forever. |
+| `retention.sweep_interval` | `1h` | `OMNISWITCH_RETENTION_SWEEP_INTERVAL` | Positive time between scheduled sweeps; the first sweep waits one full interval. |
+| `retention.batch_size` | `5000` | `OMNISWITCH_RETENTION_BATCH_SIZE` | Positive maximum rows per update/delete statement. |
+
+```yaml
+retention:
+  request_logs: 30d
+  payloads: 7d
+  guardrail_events: 30d
+  shadow_requests: 7d
+  limited_and_denied: 30d
+  sweep_interval: 1h
+  batch_size: 5000
+```
+
+Each sweep clears expired payloads before deleting rows, then removes expired
+similarity-cache entries (the `semantic_cache` table) by their `expires_at`
+value. Feedback, API/provider keys, prompts, configs, and other durable records
+are never pruned. If all five policy durations are `0`, both scheduled and
+manual sweeps are disabled, including expired-cache cleanup. A startup log line
+prints the effective policy. PostgreSQL uses a nonblocking advisory lock: only
+one concurrent replica sweeps; other replicas skip that run. Shutdown cancels
+and waits for the background job. Sweeps do not run against a database with
+pending schema migrations.
+
+`GET /api/retention` requires viewer access and reports the effective policy in
+seconds, `sweep_interval_seconds`, live `payload_logging`, and the last sweep's
+per-table deletion counts, `payloads_cleared`, and error. `POST
+/api/retention/sweep` requires admin access, runs synchronously, and returns the
+same object. `last_run` and `next_run` are `null` until the first sweep and when
+all five policies are `0`. Sweep state is process-local and resets on restart;
+skipped replicas do not claim another replica's counts. `GET /api/config.retention`
+contains the same five-field object as the retention endpoint's `policy`.
+
+### SQLite filenames
+
+The data directory now uses `omniswitch.db` and `omniswitch_cache.db`. On first
+open, legacy `sentinel.db` and `sentinel_cache.db` are moved with any `-wal` and
+`-shm` sidecars, with a log line for each move. Stop old gateway processes and
+back up the database and sidecars before upgrading. If old and new database
+files both exist, the new database wins; the old database and its sidecars stay
+untouched and a warning names the old file. No existing destination is overwritten.
 
 ## Authorization and Rate Limits
 
@@ -523,6 +599,8 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 - `OMNISWITCH_LISTEN`
 - `OMNISWITCH_DATA`
 - `OMNISWITCH_DATABASE_URL` - a `postgres://` or `postgresql://` DSN enables PostgreSQL for the persistent store: keys, logs, budgets, saved configuration, and response cache. The driver remains experimental; shared persistence does not make A2A tasks or runtime health shared or establish production active-active readiness. When unset (or not a postgres URL), SQLite in the data directory is used.
+- `OMNISWITCH_MIGRATE_ON_START` - defaults to `true`; overrides `gateway.migrate_on_start`. When `false`, pending schema migrations are not applied and `/readyz` returns `schema_pending`.
+- `OMNISWITCH_DATABASE_URL` - a `postgres://` DSN enables PostgreSQL storage so multiple gateway replicas share keys, logs, budgets, and configuration. When unset (or not a postgres URL), SQLite in the data directory is used.
 - `OMNISWITCH_AUTH`
 - `OMNISWITCH_BOOTSTRAP_API_KEY`
 - `OMNISWITCH_BOOTSTRAP_WORKSPACE`
@@ -577,7 +655,7 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 
 See [`docs/CLI.md`](CLI.md) for `omniswitch serve`, `omniswitch validate-config`,
 and `omniswitch version`. `GET /healthz` (liveness) and `GET /readyz`
-(readiness: store reachability and provider registration) are always
+(readiness: store reachability, current schema, and provider registration) are always
 unauthenticated, independent of `gateway.auth`, and safe to point Kubernetes
 or load-balancer health checks at.
 
@@ -600,6 +678,7 @@ map values/keys, not additional schema fields. Durations use strings such as
 | `gateway.policy_dir` | Dedicated named-policy replay directory; default `policies`. |
 | `gateway.storage` | Validation hint: `sqlite` or `postgres`; `postgres` requires `storage_url`. Driver selection follows `storage_url`. |
 | `gateway.storage_url` | PostgreSQL DSN for the persistent store, including keys, logs, budgets, saved config, and response cache; empty uses SQLite. PostgreSQL is experimental; A2A tasks and runtime health remain process-local. |
+| `gateway.migrate_on_start` | Apply pending schema migrations at startup; default `true`. `OMNISWITCH_MIGRATE_ON_START` overrides it. With `false`, `/readyz` returns `503` until `omniswitch migrate up` applies them. |
 | `gateway.auth` | Require API-key/OIDC authentication; OIDC configuration enables auth. |
 | `gateway.cache_threshold` | Lexical similarity cache cosine threshold; default `0.95`. |
 | `gateway.cache_ttl` | Exact/lexical response cache lifetime; default `24h`. |
@@ -670,6 +749,14 @@ map values/keys, not additional schema fields. Durations use strings such as
 | `rate_limit.redis_url` | Optional Redis URL for coordinated fixed windows; otherwise local sliding windows. |
 | `rate_limit.prefix` | Redis quota-key namespace; default `omniswitch:ratelimit`. |
 | `rate_limit.fail_open` | Allow requests on Redis failure; default `false` returns `503`. |
+| `retention` | Data retention policy; restart required. See [Data Retention](#data-retention). |
+| `retention.request_logs` | Ordinary request-log rows; default `30d`; `0` keeps them forever. |
+| `retention.payloads` | Clears stored request and response bodies but keeps the row; default `7d`; `0` keeps bodies. |
+| `retention.guardrail_events` | Guardrail-event rows; default `30d`; `0` keeps them forever. |
+| `retention.shadow_requests` | Shadow-request rows; default `7d`; `0` keeps them forever. |
+| `retention.limited_and_denied` | Request logs with status `limited` or decision `DENY`; default `30d`; `0` keeps them forever. |
+| `retention.sweep_interval` | Positive time between sweeps; default `1h`; the first sweep waits one interval. |
+| `retention.batch_size` | Positive maximum rows per delete or update statement; default `5000`. |
 | `guardrails` | Local rules, tool checks, and remote checks. |
 | `guardrails.actions` | Built-in check name to action (`deny`, `redact`, `warn`, `log`). |
 | `guardrails.rules` | Text regex checks. |

@@ -28,17 +28,19 @@ import (
 // routeHandlers holds the handlers behind the authenticated gateway mux.
 // mcp is nil when MCP is disabled.
 type routeHandlers struct {
-	settings runtimeSettings
-	registry *provider.Registry
-	gateway  *gateway.Handler
-	admin    *admin.Handler
-	feedback *feedback.Handler
-	prompt   *prompt.Handler
-	org      *org.Handler
-	eval     *eval.Handler
-	vault    *vault.Handler
-	dash     *dashboard.Handler
-	mcp      *mcpproxy.Handler
+	settings  runtimeSettings
+	registry  *provider.Registry
+	store     *store.Store
+	retention *retentionController
+	gateway   *gateway.Handler
+	admin     *admin.Handler
+	feedback  *feedback.Handler
+	prompt    *prompt.Handler
+	org       *org.Handler
+	eval      *eval.Handler
+	vault     *vault.Handler
+	dash      *dashboard.Handler
+	mcp       *mcpproxy.Handler
 }
 
 // newGatewayMux registers every route that sits behind the CORS, logging,
@@ -46,7 +48,15 @@ type routeHandlers struct {
 func newGatewayMux(h routeHandlers) *http.ServeMux {
 	mux := http.NewServeMux()
 	registerGatewayAPIRoutes(mux, h.gateway)
-	registerInfoRoutes(mux, h.settings, h.registry)
+	registerInfoRoutes(mux, h.settings, h.registry, h.store)
+	if h.retention == nil {
+		payloadLogging := func() bool { return h.settings.logPayloads }
+		if h.gateway != nil {
+			payloadLogging = h.gateway.LogPayloads
+		}
+		h.retention = newRetentionController(h.store, h.settings.retention, payloadLogging)
+	}
+	registerRetentionRoutes(mux, h.retention)
 	if h.mcp != nil {
 		mux.Handle("/mcp", h.mcp)
 		mux.Handle("/v1/mcp/tools/call", h.mcp)
@@ -81,7 +91,7 @@ func registerGatewayAPIRoutes(mux *http.ServeMux, gw *gateway.Handler) {
 
 // registerInfoRoutes registers the read-only provider, config, and version
 // endpoints.
-func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *provider.Registry) {
+func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *provider.Registry, st *store.Store) {
 	mux.HandleFunc("/api/providers", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -94,7 +104,14 @@ func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, runtimeConfigSummary(settings, registry))
+		storage, err := runtimeStorageSummary(r.Context(), st)
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"message": "storage schema unavailable", "type": "storage_error", "code": "storage_error"}})
+			return
+		}
+		summary := runtimeConfigSummary(settings, registry)
+		summary["storage"] = storage
+		writeJSON(w, http.StatusOK, summary)
 	})
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

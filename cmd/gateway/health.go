@@ -68,6 +68,16 @@ func (h *healthState) readiness(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if err := h.store.Ping(ctx); err != nil {
 		reasons = append(reasons, "store: "+err.Error())
+	} else if schema, err := h.store.SchemaStatus(ctx); err != nil {
+		reasons = append(reasons, "schema: "+err.Error())
+	} else if schema.Pending > 0 {
+		writeHealthJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status":  "not ready",
+			"reason":  "schema_pending",
+			"current": schema.Current,
+			"latest":  schema.Latest,
+		})
+		return
 	}
 
 	if !h.allowNoProviders && (h.registry == nil || len(h.registry.Names()) == 0) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 // Rerank serves a provider-neutral /v1/rerank endpoint for RAG retrieval
@@ -16,6 +17,7 @@ import (
 func (h *Handler) Rerank(w http.ResponseWriter, r *http.Request) {
 	w, r, finishMetrics := h.beginRequestMetrics(w, r)
 	defer finishMetrics()
+	r = r.WithContext(store.WithRequestEndpoint(r.Context(), r.URL.Path))
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return

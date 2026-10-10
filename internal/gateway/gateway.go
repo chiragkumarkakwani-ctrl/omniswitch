@@ -38,7 +38,7 @@ type Handler struct {
 	cacheThreshold        float64
 	cacheTTL              time.Duration
 	cacheScope            string
-	logPayloads           bool
+	logPayloads           atomic.Bool
 	streamGuardrailBuffer bool
 	maxRequestBytes       int64
 	shadowProvider        string
@@ -54,19 +54,19 @@ type cachedConfigRouter struct {
 // New creates a new gateway handler.
 func New(registry *provider.Registry, rtr *router.Router, st *store.Store, gr *guardrail.Engine) *Handler {
 	h := &Handler{
-		registry:       registry,
-		router:         rtr,
-		store:          st,
-		metrics:        telemetry.DefaultMetrics,
-		cacheThreshold: 0.95,
-		cacheTTL:       24 * time.Hour,
-		cacheScope:     "api_key",
-		// Preserve the previous package-level behavior for embedders. The gateway
-		// binary explicitly disables this unless configured otherwise.
-		logPayloads:           true,
+		registry:              registry,
+		router:                rtr,
+		store:                 st,
+		metrics:               telemetry.DefaultMetrics,
+		cacheThreshold:        0.95,
+		cacheTTL:              24 * time.Hour,
+		cacheScope:            "api_key",
 		streamGuardrailBuffer: true,
 		maxRequestBytes:       10 << 20,
 	}
+	// Preserve the previous package-level behavior for embedders. The gateway
+	// binary explicitly disables this unless configured otherwise.
+	h.SetLogPayloads(true)
 	if gr != nil {
 		h.guardrails.Store(gr)
 	}
@@ -101,7 +101,12 @@ func (h *Handler) SetCacheScope(scope string) {
 }
 
 func (h *Handler) SetLogPayloads(enabled bool) {
-	h.logPayloads = enabled
+	h.logPayloads.Store(enabled)
+}
+
+// LogPayloads reports the live payload-logging setting, including hot reloads.
+func (h *Handler) LogPayloads() bool {
+	return h.logPayloads.Load()
 }
 
 // SetStreamGuardrailBuffer prevents output from being emitted before output
@@ -140,7 +145,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	w, r, finishMetrics := h.beginRequestMetrics(w, r)
 	defer finishMetrics()
 	ctx, span := otel.Tracer("omniswitch/gateway").Start(
-		r.Context(),
+		store.WithRequestEndpoint(r.Context(), r.URL.Path),
 		"chat unknown",
 		oteltrace.WithSpanKind(oteltrace.SpanKindServer),
 		oteltrace.WithAttributes(
@@ -497,17 +502,19 @@ func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
 	}
 
 	entry := store.RequestLog{
-		ID:        logCtx.ID,
-		Timestamp: time.Now().UTC(),
-		TraceID:   logCtx.TraceID,
-		SessionID: logCtx.SessionID,
-		Model:     logCtx.Request.Model,
-		APIKeyID:  logCtx.APIKeyID,
-		Status:    logCtx.Status,
-		Decision:  "ALLOW",
-		Cached:    logCtx.Cached,
+		ID:         logCtx.ID,
+		Timestamp:  time.Now().UTC(),
+		TraceID:    logCtx.TraceID,
+		SessionID:  logCtx.SessionID,
+		Endpoint:   store.RequestEndpoint(ctx),
+		CostSource: "none",
+		Model:      logCtx.Request.Model,
+		APIKeyID:   logCtx.APIKeyID,
+		Status:     logCtx.Status,
+		Decision:   "ALLOW",
+		Cached:     logCtx.Cached,
 	}
-	if h.logPayloads {
+	if h.LogPayloads() {
 		entry.RequestBody = marshalLogBody(logCtx.Request)
 	}
 
@@ -532,7 +539,7 @@ func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
 		entry.InputTokens = logCtx.Response.Usage.PromptTokens
 		entry.OutputTokens = logCtx.Response.Usage.CompletionTokens
 		entry.TotalTokens = logCtx.Response.Usage.TotalTokens
-		if h.logPayloads {
+		if h.LogPayloads() {
 			entry.ResponseBody = marshalLogBody(logCtx.Response)
 		}
 	}
