@@ -36,7 +36,7 @@ func TestChatCompletionsAllowPath(t *testing.T) {
 		t.Fatalf("status/body = %d/%s, want chat response", rec.Code, rec.Body.String())
 	}
 
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "test", "success")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: "test", Statuses: []string{"success"}})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestChatCompletionsGuardrailDeny(t *testing.T) {
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "guardrail_triggered") {
 		t.Fatalf("status/body = %d/%s, want guardrail denial", rec.Code, rec.Body.String())
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "denied")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: "", Statuses: []string{"denied"}})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestChatCompletionsStreamingLogsCostFromUsage(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "openai", "success")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: "openai", Statuses: []string{"success"}})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}
@@ -359,7 +359,7 @@ func TestA2ASendMessageUsesChatPipeline(t *testing.T) {
 	if len(body.Result.Artifacts) != 1 || len(body.Result.Artifacts[0].Parts) != 1 || body.Result.Artifacts[0].Parts[0].Text != "hello from a2a" {
 		t.Fatalf("artifacts = %+v, want provider content", body.Result.Artifacts)
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "test", "success")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: "test", Statuses: []string{"success"}})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}
@@ -419,7 +419,7 @@ func TestRerankCompatibility(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"object":"list"`) || !strings.Contains(rec.Body.String(), `"relevance_score":0.91`) {
 		t.Fatalf("status/body = %d/%s, want rerank response", rec.Code, rec.Body.String())
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "rerank", "success")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: "rerank", Statuses: []string{"success"}})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}
@@ -501,7 +501,7 @@ func TestChatCompletionsShadowRouting(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "primary", "success")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: "primary", Statuses: []string{"success"}})
 	if err != nil {
 		t.Fatalf("ListLogs() error = %v", err)
 	}

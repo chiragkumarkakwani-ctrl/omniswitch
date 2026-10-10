@@ -96,7 +96,7 @@ func TestAuthMiddlewareRejectedKeyDoesNotTouchLastUsed(t *testing.T) {
 				t.Fatal("rejected key reached handler")
 			})).ServeHTTP(rec, req)
 			key, err := st.GetAPIKeyByID(ctx, test.name)
-			if rec.Code != http.StatusForbidden || err != nil || key.LastUsedAt != nil {
+			if rec.Code != http.StatusUnauthorized || err != nil || key.LastUsedAt != nil {
 				t.Fatalf("rejected key touched: status=%d, key=%+v, err=%v", rec.Code, key, err)
 			}
 		})

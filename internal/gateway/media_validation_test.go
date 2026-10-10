@@ -12,6 +12,7 @@ import (
 
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 func TestMediaUnsupportedProviderIs400(t *testing.T) {
@@ -40,7 +41,7 @@ func TestMediaUnsupportedProviderIs400(t *testing.T) {
 					t.Fatalf("%s unsupported status/body = %d/%s", endpoint, recorder.Code, recorder.Body.String())
 				}
 			}
-			logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "error")
+			logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"error"}})
 			if err != nil || total != 3 || len(logs) != 3 || logs[0].Provider != p.Name() {
 				t.Fatalf("unsupported logs/total/error = %+v/%d/%v", logs, total, err)
 			}

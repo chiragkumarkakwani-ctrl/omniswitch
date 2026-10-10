@@ -1,0 +1,64 @@
+{
+  "providers": [
+    {
+      "name": "openai",
+      "type": "openai",
+      "circuit": {
+        "state": "closed",
+        "failures": 0,
+        "threshold": 3,
+        "open_until": null,
+        "last_failure": null
+      },
+      "requests": 8240,
+      "avg_latency_ms": 412,
+      "error_rate": 0.0018,
+      "cost": 4.54
+    },
+    {
+      "name": "azure",
+      "type": "azure",
+      "circuit": {
+        "state": "closed",
+        "failures": 0,
+        "threshold": 3,
+        "open_until": null,
+        "last_failure": null
+      },
+      "requests": 3018,
+      "avg_latency_ms": 486,
+      "error_rate": 0.0004,
+      "cost": 1.08
+    },
+    {
+      "name": "anthropic",
+      "type": "anthropic",
+      "circuit": {
+        "state": "closed",
+        "failures": 0,
+        "threshold": 3,
+        "open_until": null,
+        "last_failure": null
+      },
+      "requests": 1080,
+      "avg_latency_ms": 798,
+      "error_rate": 0.0007,
+      "cost": 12.72
+    },
+    {
+      "name": "groq",
+      "type": "openai",
+      "circuit": {
+        "state": "open",
+        "failures": 3,
+        "threshold": 3,
+        "open_until": "2026-10-09T14:30:24Z",
+        "last_failure": "2026-10-09T14:29:42Z"
+      },
+      "requests": 50,
+      "avg_latency_ms": 1002,
+      "error_rate": 0.38,
+      "cost": 0.08
+    }
+  ]
+}

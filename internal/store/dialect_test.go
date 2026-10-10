@@ -43,7 +43,7 @@ func TestSQLitePathStillWorks(t *testing.T) {
 	if err := st.InsertLog(ctx, log); err != nil {
 		t.Fatalf("insert log: %v", err)
 	}
-	logs, total, err := st.ListLogs(ctx, 10, 0, "", "")
+	logs, total, err := st.ListLogs(ctx, LogFilter{Limit: 10, Offset: 0, Provider: ""})
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}

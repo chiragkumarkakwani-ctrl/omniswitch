@@ -16,6 +16,7 @@ import (
 
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 func TestSpeechStreamsBinaryBeforeUpstreamCompletes(t *testing.T) {
@@ -81,7 +82,7 @@ func TestSpeechStreamsBinaryBeforeUpstreamCompletes(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("speech did not finish and log")
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10})
 	if err != nil || total != 1 || logs[0].Status != "success" || logs[0].RequestBody != "" || logs[0].ResponseBody != "" {
 		t.Fatalf("speech logs/total/error = %+v/%d/%v", logs, total, err)
 	}
@@ -105,7 +106,7 @@ func TestSpeechReadFailureClosesUpstreamWithoutAppendingJSON(t *testing.T) {
 	if recorder.Code != http.StatusOK || recorder.Body.String() != "audio" || !body.closed.Load() {
 		t.Fatalf("partial stream status/body/closed = %d/%q/%t", recorder.Code, recorder.Body.String(), body.closed.Load())
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "error")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"error"}})
 	if err != nil || total != 1 || !strings.Contains(logs[0].ErrorMessage, "speech stream failed") {
 		t.Fatalf("stream failure logs/total/error = %+v/%d/%v", logs, total, err)
 	}

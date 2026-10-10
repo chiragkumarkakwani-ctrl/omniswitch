@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
@@ -15,6 +17,7 @@ const (
 	metadataJSONContextKey contextKey = "metadata_json"
 	tagsContextKey         contextKey = "tags"
 	traceRecorderKey       contextKey = "trace_recorder"
+	authStartKey           contextKey = "auth_start"
 )
 
 func WithUserID(ctx context.Context, id string) context.Context {
@@ -82,6 +85,9 @@ func normalizedMetadataJSON(value string) string {
 		fallback, _ := json.Marshal(map[string]any{"_invalid_metadata": value})
 		return string(fallback)
 	}
+	if decoded == nil {
+		return "{}"
+	}
 	encoded, err := json.Marshal(decoded)
 	if err != nil {
 		return "{}"
@@ -90,8 +96,9 @@ func normalizedMetadataJSON(value string) string {
 }
 
 type traceRecorder struct {
-	mu    sync.Mutex
-	spans []store.TraceSpan
+	mu        sync.Mutex
+	spans     []store.TraceSpan
+	truncated bool
 }
 
 func newTraceRecorder() *traceRecorder {
@@ -99,7 +106,10 @@ func newTraceRecorder() *traceRecorder {
 }
 
 func WithTraceRecorder(ctx context.Context, recorder *traceRecorder) context.Context {
-	return context.WithValue(ctx, traceRecorderKey, recorder)
+	ctx = context.WithValue(ctx, traceRecorderKey, recorder)
+	return router.WithSpanRecorder(ctx, func(name, providerName, status string, start time.Time, metadata map[string]any) {
+		recordTraceSpan(ctx, name, providerName, status, start, metadata)
+	})
 }
 
 func TraceRecorderFromContext(ctx context.Context) *traceRecorder {
@@ -117,11 +127,15 @@ func recordTraceSpan(ctx context.Context, name, providerName, status string, sta
 	}
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
+	if len(recorder.spans) >= 256 {
+		recorder.truncated = true
+		return
+	}
 	recorder.spans = append(recorder.spans, store.TraceSpan{
 		Name:       name,
 		Provider:   providerName,
 		Start:      start.UTC(),
-		DurationMs: float64(time.Since(start).Microseconds()) / 1000,
+		DurationMs: float64(time.Since(start)) / float64(time.Millisecond),
 		Status:     status,
 		Metadata:   metadata,
 	})
@@ -134,20 +148,38 @@ func spansFromContext(ctx context.Context) []store.TraceSpan {
 	}
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
-	return append([]store.TraceSpan(nil), recorder.spans...)
+	spans := append([]store.TraceSpan(nil), recorder.spans...)
+	sort.SliceStable(spans, func(i, j int) bool { return spans[i].Start.Before(spans[j].Start) })
+	return spans
 }
 
-func metadataWithSpans(metadataJSON string, spans []store.TraceSpan) string {
+func metadataWithSpans(metadataJSON string, spans []store.TraceSpan, truncated bool) string {
 	var metadata map[string]any
 	if err := json.Unmarshal([]byte(normalizedMetadataJSON(metadataJSON)), &metadata); err != nil {
 		metadata = map[string]any{}
 	}
+	delete(metadata, "_spans") // Caller metadata cannot supply measured stages.
 	if len(spans) > 0 {
 		metadata["_spans"] = spans
+	}
+	if truncated {
+		metadata["_spans_truncated"] = true
+	} else {
+		delete(metadata, "_spans_truncated")
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {
 		return normalizedMetadataJSON(metadataJSON)
 	}
 	return string(encoded)
+}
+
+func traceSpansTruncated(ctx context.Context) bool {
+	recorder := TraceRecorderFromContext(ctx)
+	if recorder == nil {
+		return false
+	}
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return recorder.truncated
 }

@@ -1,0 +1,21 @@
+{
+  "authenticated": true,
+  "auth_enabled": true,
+  "auth_method": "api_key",
+  "key_id": "bootstrap-admin",
+  "name": "Bootstrap administrator",
+  "key_prefix": "sk-osw-d4e5f6…",
+  "role": "owner",
+  "workspace_id": "",
+  "organization_id": "",
+  "expires_at": null,
+  "is_bootstrap": true,
+  "gateway": {
+    "version": "0.2.0",
+    "commit": "abc1234",
+    "storage": "sqlite",
+    "listen": ":8091",
+    "mcp_enabled": true,
+    "log_payloads": false
+  }
+}

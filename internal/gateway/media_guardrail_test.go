@@ -27,7 +27,7 @@ func TestMediaInputGuardrailsDenyBeforeUpstream(t *testing.T) {
 			t.Fatalf("%s status/body = %d/%s, want guardrail denial", endpoint, recorder.Code, recorder.Body.String())
 		}
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "denied")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"denied"}})
 	if err != nil || total != 3 || len(logs) != 3 || calls.Load() != 0 {
 		t.Fatalf("denied logs/total/error/upstream calls = %d/%d/%v/%d", len(logs), total, err, calls.Load())
 	}
@@ -53,7 +53,7 @@ func TestMediaTranscriptOutputGuardrailsDenyAndRedact(t *testing.T) {
 			if recorder.Code != want || strings.Contains(recorder.Body.String(), "PRIVATE") {
 				t.Fatalf("output %s status/body = %d/%s", action, recorder.Code, recorder.Body.String())
 			}
-			logs, _, err := st.ListLogs(context.Background(), 10, 0, "", "")
+			logs, _, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10})
 			if err != nil || len(logs) != 1 || strings.Contains(logs[0].ResponseBody, "PRIVATE") {
 				t.Fatalf("output logs/error = %+v/%v", logs, err)
 			}

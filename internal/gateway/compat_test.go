@@ -339,7 +339,7 @@ func TestCompatTwoTurnTools(t *testing.T) {
 				if len(secondChat.Messages) != 3 || secondChat.Messages[1].ToolCalls[0].ID != "call_weather" || secondChat.Messages[2].Role != "tool" || secondChat.Messages[2].ToolCallID != "call_weather" || secondChat.Messages[2].Content != "Sunny" {
 					t.Fatalf("tool history = %+v", secondChat.Messages)
 				}
-				logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "success")
+				logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"success"}})
 				if err != nil || total != 2 || len(logs) != 2 || logs[0].TraceID != "trace_compat" || logs[0].SessionID != "session_compat" {
 					t.Fatalf("chat logs = %+v total=%d err=%v", logs, total, err)
 				}
@@ -471,7 +471,7 @@ func TestCompatGuardrailsToolRulesAndCache(t *testing.T) {
 			if calls.Load() != 1 {
 				t.Fatalf("upstream calls = %d", calls.Load())
 			}
-			logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "success")
+			logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"success"}})
 			if err != nil || total != 2 || !logs[0].Cached {
 				t.Fatalf("cache logs = %+v %d %v", logs, total, err)
 			}
@@ -650,7 +650,7 @@ func TestMalformedMessagesOutputLoggedAsErrorNotCached(t *testing.T) {
 	if rec.Code != 502 {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "error")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"error"}})
 	if err != nil || total != 1 || !strings.Contains(logs[0].ErrorMessage, "malformed tool arguments") {
 		t.Fatalf("error logs = %+v %d %v", logs, total, err)
 	}
@@ -774,7 +774,7 @@ func TestMalformedLiveMessagesStreamIsNotCachedAndLogsError(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatal("malformed live output must not be cached")
 	}
-	_, total, err := st.ListLogs(context.Background(), 10, 0, "", "error")
+	_, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Statuses: []string{"error"}})
 	if err != nil || total != 2 {
 		t.Fatalf("error logs = %d %v", total, err)
 	}

@@ -443,6 +443,7 @@ func (r *Router) Rerank(ctx context.Context, req provider.RerankRequest, provide
 // Execute routes a chat request to the appropriate provider,
 // handling retries and fallbacks automatically.
 func (r *Router) Execute(ctx context.Context, req provider.ChatRequest, providerHint string) (provider.ChatResponse, provider.ProviderMeta, error) {
+	routeStart := time.Now()
 	logicalModel := req.Model
 	route, hasRoute := r.routeFor(logicalModel)
 	selectedRoute := false
@@ -456,16 +457,21 @@ func (r *Router) Execute(ctx context.Context, req provider.ChatRequest, provider
 		}
 	}
 	providers := r.resolveProviders(logicalModel, req.Model, providerHint, route, hasRoute && (selectedRoute || providerHint == ""))
+	recordRoute(ctx, routeStart, logicalModel, req.Model, route, providers)
 	if len(providers) == 0 {
 		return provider.ChatResponse{}, provider.ProviderMeta{}, fmt.Errorf("no provider found for model %q", req.Model)
 	}
 
 	var lastErr error
 	for i, prov := range providers {
+		fallbackStart := time.Now()
 		if !r.allowProvider(prov.Name()) {
 			lastErr = fmt.Errorf("provider %q circuit is open", prov.Name())
 			traceSkippedProvider(ctx, prov.Name(), req.Model, lastErr)
 			continue
+		}
+		if i > 0 {
+			recordProviderFallback(ctx, fallbackStart, providers[i-1].Name(), prov.Name(), route, lastErr)
 		}
 		maxRetries := route.MaxRetries + 1
 		if !hasRoute {
@@ -473,9 +479,11 @@ func (r *Router) Execute(ctx context.Context, req provider.ChatRequest, provider
 		}
 
 		for attempt := 0; attempt < maxRetries; attempt++ {
+			attemptStart := time.Now()
 			callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 			callCtx, span := startProviderSpan(callCtx, prov.Name(), req.Model, attempt, i > 0, false)
 			resp, meta, err := prov.ChatCompletion(callCtx, req)
+			recordProviderAttempt(ctx, attemptStart, prov.Name(), req.Model, attempt, i > 0, false, err)
 			cancel()
 			if err == nil {
 				r.recordSuccess(prov.Name())
@@ -503,7 +511,7 @@ func (r *Router) Execute(ctx context.Context, req provider.ChatRequest, provider
 
 			// Brief backoff before retry.
 			if attempt < maxRetries-1 {
-				if err := waitForRetry(ctx, retryBackoff(route.RetryBackoff, attempt)); err != nil {
+				if err := waitForRecordedRetry(ctx, prov.Name(), attempt, retryBackoff(route.RetryBackoff, attempt)); err != nil {
 					return provider.ChatResponse{}, meta, err
 				}
 			}
@@ -516,6 +524,7 @@ func (r *Router) Execute(ctx context.Context, req provider.ChatRequest, provider
 }
 
 func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, providerHint string) (<-chan provider.ChatResponseChunk, provider.ProviderMeta, error) {
+	routeStart := time.Now()
 	logicalModel := req.Model
 	route, hasRoute := r.routeFor(logicalModel)
 	selectedRoute := false
@@ -530,23 +539,29 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 	}
 
 	providers := r.resolveProviders(logicalModel, req.Model, providerHint, route, hasRoute && (selectedRoute || providerHint == ""))
+	recordRoute(ctx, routeStart, logicalModel, req.Model, route, providers)
 	if len(providers) == 0 {
 		return nil, provider.ProviderMeta{}, fmt.Errorf("no provider found for model %q", req.Model)
 	}
 
 	var lastErr error
 	for i, prov := range providers {
+		fallbackStart := time.Now()
 		if !r.allowProvider(prov.Name()) {
 			lastErr = fmt.Errorf("provider %q circuit is open", prov.Name())
 			continue
 		}
 
+		if i > 0 {
+			recordProviderFallback(ctx, fallbackStart, providers[i-1].Name(), prov.Name(), route, lastErr)
+		}
 		if streamer, ok := prov.(provider.StreamProvider); ok {
 			attempts := 1
 			if hasRoute {
 				attempts += route.MaxRetries
 			}
 			for attempt := 0; attempt < attempts; attempt++ {
+				attemptStart := time.Now()
 				callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 				callCtx, span := startProviderSpan(callCtx, prov.Name(), req.Model, attempt, i > 0, true)
 				chunks, meta, err := streamer.ChatCompletionStream(callCtx, req)
@@ -559,8 +574,9 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 						meta.Model = req.Model
 					}
 					finishProviderSpan(span, meta, nil)
-					return chunks, meta, nil
+					return recordStreamAttempt(callCtx, chunks, cancel, attemptStart, prov.Name(), req.Model, attempt, i > 0), meta, nil
 				}
+				recordProviderAttempt(ctx, attemptStart, prov.Name(), req.Model, attempt, i > 0, true, err)
 				cancel()
 				finishProviderSpan(span, meta, err)
 				r.recordFailure(prov.Name())
@@ -569,7 +585,7 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 					break
 				}
 				if attempt < attempts-1 {
-					if err := waitForRetry(ctx, retryBackoff(route.RetryBackoff, attempt)); err != nil {
+					if err := waitForRecordedRetry(ctx, prov.Name(), attempt, retryBackoff(route.RetryBackoff, attempt)); err != nil {
 						return nil, meta, err
 					}
 				}
@@ -577,9 +593,11 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 			continue
 		}
 
+		attemptStart := time.Now()
 		callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 		callCtx, span := startProviderSpan(callCtx, prov.Name(), req.Model, 0, i > 0, false)
 		resp, meta, err := prov.ChatCompletion(callCtx, req)
+		recordProviderAttempt(ctx, attemptStart, prov.Name(), req.Model, 0, i > 0, false, err)
 		cancel()
 		if err == nil {
 			r.recordSuccess(prov.Name())

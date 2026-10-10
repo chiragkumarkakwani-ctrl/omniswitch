@@ -1,0 +1,60 @@
+{
+  "principal": {
+    "key_id": "key_agent",
+    "workspace_id": "ws_production",
+    "role": "member"
+  },
+  "tools": [
+    {
+      "target": "workspace",
+      "name": "read_file",
+      "namespaced_name": "workspace__read_file",
+      "description": "Read file",
+      "list": {
+        "allowed": true,
+        "rule": "read-only",
+        "reason": "Read-only tools allowed"
+      },
+      "call": {
+        "allowed": true,
+        "rule": "read-only",
+        "reason": "Read-only tools allowed",
+        "evaluated_without_arguments": true
+      }
+    },
+    {
+      "target": "workspace",
+      "name": "list_files",
+      "namespaced_name": "workspace__list_files",
+      "description": "List files",
+      "list": {
+        "allowed": true,
+        "rule": "read-only",
+        "reason": "Read-only tools allowed"
+      },
+      "call": {
+        "allowed": true,
+        "rule": "read-only",
+        "reason": "Read-only tools allowed",
+        "evaluated_without_arguments": true
+      }
+    },
+    {
+      "target": "workspace",
+      "name": "delete_file",
+      "namespaced_name": "workspace__delete_file",
+      "description": "Delete file",
+      "list": {
+        "allowed": false,
+        "rule": "production-delete",
+        "reason": "Destructive tools blocked"
+      },
+      "call": {
+        "allowed": false,
+        "rule": "production-delete",
+        "reason": "Destructive tools blocked",
+        "evaluated_without_arguments": true
+      }
+    }
+  ]
+}

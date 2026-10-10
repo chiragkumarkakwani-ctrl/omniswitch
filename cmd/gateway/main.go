@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -156,6 +158,7 @@ func runServe() {
 	mux := newGatewayMux(routeHandlers{
 		settings:  settings,
 		registry:  registry,
+		router:    rtr,
 		store:     st,
 		retention: retention,
 		gateway:   gw,
@@ -260,17 +263,28 @@ func ensureBootstrapKey(ctx context.Context, st *store.Store, settings runtimeSe
 		if len(prefix) > 12 {
 			prefix = prefix[:12]
 		}
-		return st.InsertAPIKey(ctx, store.APIKey{
-			ID:          "bootstrap-admin",
-			Name:        "Bootstrap administrator",
-			KeyHash:     hex.EncodeToString(hash[:]),
-			KeyPrefix:   prefix + "...",
-			WorkspaceID: strings.TrimSpace(settings.bootstrapWorkspaceID),
-			Role:        role,
-			CreatedAt:   time.Now().UTC(),
-			RateLimit:   120,
-			Enabled:     true,
-		})
+		key, err := st.GetAPIKeyByID(ctx, "bootstrap-admin")
+		if errors.Is(err, sql.ErrNoRows) {
+			if err := st.InsertBootstrapAPIKeyIfAbsent(ctx, store.APIKey{
+				ID: "bootstrap-admin", Name: "Bootstrap administrator",
+				KeyHash: hex.EncodeToString(hash[:]), KeyPrefix: prefix + "...",
+				WorkspaceID: strings.TrimSpace(settings.bootstrapWorkspaceID), Role: role,
+				CreatedAt: time.Now().UTC(), RateLimit: 120, Enabled: true,
+			}); err != nil {
+				return err
+			}
+			key, err = st.GetAPIKeyByID(ctx, "bootstrap-admin")
+		}
+		if err != nil {
+			return err
+		}
+		if !key.Enabled {
+			log.Println("WARNING: bootstrap-admin exists but is disabled; startup will not re-enable it. Use a personal administrator key.")
+		}
+		if key.KeyHash != hex.EncodeToString(hash[:]) {
+			return st.UpdateAPIKeyHash(ctx, key.ID, hex.EncodeToString(hash[:]))
+		}
+		return nil
 	}
 
 	keys, err := st.ListAPIKeys(ctx)

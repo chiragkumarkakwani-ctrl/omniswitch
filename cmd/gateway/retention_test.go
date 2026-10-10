@@ -80,7 +80,7 @@ func TestRetentionAPIContractAndConfigSummary(t *testing.T) {
 			t.Errorf("deleted.%s=%v, want 1", name, count)
 		}
 	}
-	logs, _, err := st.ListLogs(ctx, 10, 0, "", "")
+	logs, _, err := st.ListLogs(ctx, store.LogFilter{Since: time.Unix(0, 0).UTC(), Limit: 10})
 	if err != nil || len(logs) != 1 || logs[0].ID != "payload_only" || logs[0].RequestBody != "" || logs[0].ResponseBody != "" {
 		t.Fatalf("payload policy removed the row or retained bodies: %+v, err=%v", logs, err)
 	}
@@ -194,7 +194,7 @@ func TestRetentionSweeperWaitsForIntervalAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := controller.start(ctx)
 	defer func() { cancel(); <-done }()
-	logs, _, err := st.ListLogs(context.Background(), 10, 0, "", "")
+	logs, _, err := st.ListLogs(context.Background(), store.LogFilter{Since: time.Unix(0, 0).UTC(), Limit: 10})
 	if err != nil || len(logs) != 1 || controller.snapshot().LastRun != nil || controller.snapshot().NextRun != nil {
 		t.Fatalf("sweep ran at startup: logs=%v, err=%v, status=%+v", logs, err, controller.snapshot())
 	}

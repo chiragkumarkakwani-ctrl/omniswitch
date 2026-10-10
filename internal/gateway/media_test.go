@@ -38,7 +38,7 @@ func TestImageGenerationJSONAndUnpricedLog(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "aW1hZ2U=") || recorder.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("status/body/type = %d/%s/%s", recorder.Code, recorder.Body.String(), recorder.Header().Get("Content-Type"))
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "", "")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10})
 	if err != nil || total != 1 || logs[0].Status != "success" || logs[0].Provider != "openai" || logs[0].Model != "dall-e-3" || logs[0].Cost != 0 {
 		t.Fatalf("media logs = %+v, total/error = %d/%v", logs, total, err)
 	}
@@ -86,7 +86,7 @@ func TestTranscriptionMultipartAndJSONTranscript(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"text":"Hello transcript."`) {
 		t.Fatalf("transcription status/body = %d/%s", recorder.Code, recorder.Body.String())
 	}
-	logs, _, err := st.ListLogs(context.Background(), 10, 0, "", "")
+	logs, _, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10})
 	if err != nil || len(logs) != 1 || logs[0].Model != "whisper-1" || logs[0].Status != "success" {
 		t.Fatalf("transcription logs/error = %+v/%v", logs, err)
 	}

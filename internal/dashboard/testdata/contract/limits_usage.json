@@ -1,0 +1,26 @@
+{
+  "policies": [
+    {
+      "name": "agent-worker tokens",
+      "scope": "key",
+      "unit": "tokens",
+      "limit": 50000,
+      "window": "1m",
+      "used": 42000,
+      "remaining": 8000,
+      "resets_in_seconds": 24,
+      "source": "key"
+    },
+    {
+      "name": "development spend",
+      "scope": "workspace",
+      "unit": "usd",
+      "limit": 10,
+      "window": "24h",
+      "used": 8.6,
+      "remaining": 1.4,
+      "resets_in_seconds": 7200,
+      "source": "config"
+    }
+  ]
+}

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omniswitch-dev/omniswitch/internal/dashboard"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 	"github.com/omniswitch-dev/omniswitch/internal/telemetry"
 )
 
@@ -101,13 +101,12 @@ func TestPrometheusScrape(t *testing.T) {
 		`omniswitch_cost_usd_total{provider="test",model="test-model"} 0.375`,
 		`omniswitch_guardrail_events_total{type="pii",action="redact"} 1`,
 	)
-	dash := dashboard.New(nil)
-	dash.SetMetrics(metrics)
-	dash.RegisterPrometheus(mux)
+	// The dashboard package tests the /metrics route; it imports this
+	// package, so serve the registry directly here.
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	metrics.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "version=0.0.4") {
-		t.Fatal("dashboard /metrics did not expose the registry")
+		t.Fatal("metrics registry did not serve the Prometheus text format")
 	}
 	if path := os.Getenv("OMNISWITCH_METRICS_OUTPUT"); path != "" {
 		if err := os.WriteFile(path, rec.Body.Bytes(), 0600); err != nil {
@@ -288,7 +287,7 @@ func TestMetricsShadowUsageDoesNotAddRequests(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	logs, total, err := st.ListLogs(context.Background(), 10, 0, "primary", "success")
+	logs, total, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Provider: "primary", Statuses: []string{"success"}})
 	if err != nil || total != 1 || len(logs) != 1 {
 		t.Fatalf("primary logs = %+v, total = %d, error = %v", logs, total, err)
 	}

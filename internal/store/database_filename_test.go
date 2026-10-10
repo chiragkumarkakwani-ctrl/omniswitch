@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLegacyDatabaseMovePreservesUncheckpointedWALData(t *testing.T) {
@@ -43,7 +44,7 @@ func TestLegacyDatabaseMovePreservesUncheckpointedWALData(t *testing.T) {
 			t.Fatalf("old database/sidecar remains after first open: %q err=%v", suffix, err)
 		}
 	}
-	logs, _, err := st.ListLogs(context.Background(), 10, 0, "", "")
+	logs, _, err := st.ListLogs(context.Background(), LogFilter{Since: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Limit: 10})
 	if err != nil || len(logs) != 1 || logs[0].ID != "legacy_request" || logs[0].RequestBody != "original prompt" || logs[0].ResponseBody != "original output" || logs[0].Cost != 1.25 {
 		t.Fatalf("legacy data lost after WAL move/migration: %+v, err=%v", logs, err)
 	}

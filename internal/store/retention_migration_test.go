@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestRetentionIndexMigrationIsTransactional(t *testing.T) {
@@ -60,7 +61,7 @@ func TestRetentionIndexMigrationIsTransactional(t *testing.T) {
 			for _, index := range indexes {
 				assertRetentionIndex(t, st, index, true)
 			}
-			logs, count, err := st.ListLogs(ctx, 10, 0, "", "")
+			logs, count, err := st.ListLogs(ctx, LogFilter{Since: time.Unix(0, 0).UTC(), Limit: 10})
 			if err != nil || count != 1 || len(logs) != 1 || logs[0].RequestBody != "original prompt" || logs[0].ResponseBody != "original output" {
 				t.Fatalf("index migration changed row data: %+v count=%d err=%v", logs, count, err)
 			}

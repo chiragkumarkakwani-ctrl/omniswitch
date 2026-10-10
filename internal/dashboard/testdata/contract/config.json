@@ -1,0 +1,195 @@
+{
+  "version": "0.2.0",
+  "commit": "abc1234",
+  "config_path": "/etc/omniswitch/omniswitch.yaml",
+  "auth_enabled": true,
+  "gateway": {
+    "listen": ":8091",
+    "auth_enabled": true,
+    "cache_threshold": 0.95,
+    "cache_ttl": "10m0s",
+    "cache_scope": "api_key",
+    "log_payloads": false,
+    "cors_origins": [],
+    "max_request_bytes": 1048576,
+    "max_upload_bytes": 26214400,
+    "read_header_timeout": "10s",
+    "read_timeout": "30s",
+    "write_timeout": "2m0s",
+    "idle_timeout": "2m0s",
+    "circuit_breaker_failures": 3,
+    "circuit_breaker_cooldown": "30s",
+    "shadow_provider": ""
+  },
+  "rate_limit": {
+    "requests": 120,
+    "window": "1m0s",
+    "backend": "local",
+    "fail_open": false,
+    "policies": [
+      {
+        "name": "development spend",
+        "scope": "workspace",
+        "unit": "usd",
+        "limit": 10,
+        "window": "24h",
+        "match": "development",
+        "action": "reject"
+      }
+    ]
+  },
+  "identity": {
+    "api_keys_enabled": true,
+    "oidc": {
+      "enabled": false,
+      "issuer": "",
+      "audience": "",
+      "role_claim": "role",
+      "workspace_claim": "workspace",
+      "organization_claim": "organization",
+      "cache_ttl": "5m0s"
+    }
+  },
+  "guardrails": {
+    "stream_buffer": true,
+    "actions": {
+      "pii": "redact",
+      "injection": "deny",
+      "sql_injection": "deny",
+      "toxic": "log",
+      "code_leakage": "deny"
+    },
+    "rule_count": 1,
+    "rules": [
+      {
+        "name": "production-delete",
+        "stage": "input",
+        "action": "deny"
+      }
+    ],
+    "tool_rule_count": 0,
+    "tool_rules": [],
+    "webhook_count": 0,
+    "webhooks": [],
+    "llm_judge_count": 0,
+    "llm_judges": [],
+    "moderation_api": true
+  },
+  "providers": {
+    "names": [
+      "openai",
+      "azure",
+      "anthropic",
+      "groq"
+    ],
+    "model_count": 3
+  },
+  "routes": [
+    {
+      "model": "gpt-4o-mini",
+      "provider": "openai",
+      "strategy": "fallback",
+      "fallbacks": [
+        "azure"
+      ],
+      "max_retries": 1,
+      "retry_backoff": "80ms",
+      "retry_codes": [
+        429,
+        503
+      ],
+      "timeout": "30s",
+      "shadow_provider": "",
+      "default_params": {},
+      "override_params": {},
+      "drop_params": [],
+      "variants": []
+    },
+    {
+      "model": "chat-balanced",
+      "provider": "openai",
+      "strategy": "weighted",
+      "fallbacks": [
+        "azure"
+      ],
+      "max_retries": 1,
+      "retry_backoff": "80ms",
+      "retry_codes": [
+        429,
+        503
+      ],
+      "timeout": "30s",
+      "shadow_provider": "",
+      "default_params": {},
+      "override_params": {},
+      "drop_params": [],
+      "variants": [
+        {
+          "name": "primary",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "weight": 70
+        },
+        {
+          "name": "canary",
+          "provider": "azure",
+          "model": "gpt-4o-mini",
+          "weight": 30
+        }
+      ]
+    }
+  ],
+  "mcp": {
+    "enabled": true,
+    "targets": [
+      {
+        "name": "workspace",
+        "transport": "stdio",
+        "enabled": true,
+        "policy_path": "/etc/omniswitch/production-delete.yaml",
+        "token_exchange": {
+          "configured": false,
+          "token_url_host": "",
+          "audience": ""
+        }
+      }
+    ]
+  },
+  "a2a": {
+    "enabled": true,
+    "agent_card_path": "/.well-known/agent-card.json",
+    "jsonrpc_path": "/a2a",
+    "methods": [
+      "SendMessage",
+      "SendMessageStream",
+      "GetTask",
+      "CancelTask"
+    ],
+    "streaming": true,
+    "streaming_mode": "sse_task_events",
+    "task_lifecycle": true,
+    "task_store": "in_memory",
+    "cancel": "best_effort",
+    "push_notifications": false
+  },
+  "retention": {
+    "request_logs": 2592000,
+    "payloads": 604800,
+    "guardrail_events": 2592000,
+    "shadow_requests": 604800,
+    "limited_and_denied": 2592000
+  },
+  "pricing": {
+    "catalog_verified_on": "2026-09-30",
+    "catalog_file": "",
+    "overrides": 0
+  },
+  "storage": {
+    "driver": "sqlite",
+    "schema_version": 2,
+    "pending_migrations": 0
+  },
+  "metrics": {
+    "public": false
+  }
+}

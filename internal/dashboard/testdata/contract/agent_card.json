@@ -1,0 +1,53 @@
+{
+  "name": "OmniSwitch AI Gateway",
+  "description": "Routes and governs AI inference through an A2A direct-message interface.",
+  "version": "1.0",
+  "supportedInterfaces": [
+    {
+      "url": "http://gateway.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false,
+    "extendedAgentCard": true
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "securitySchemes": {
+    "omniswitchBearer": {
+      "httpAuthSecurityScheme": {
+        "scheme": "Bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "omniswitchBearer": []
+    }
+  ],
+  "skills": [
+    {
+      "id": "omniswitch-inference",
+      "name": "Governed AI inference",
+      "description": "Sends text to a routed model selected by metadata.model.",
+      "tags": [
+        "inference",
+        "routing",
+        "guardrails"
+      ],
+      "inputModes": [
+        "text/plain"
+      ],
+      "outputModes": [
+        "text/plain"
+      ]
+    }
+  ]
+}

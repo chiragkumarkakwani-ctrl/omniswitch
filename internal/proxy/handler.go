@@ -338,6 +338,7 @@ func (h *Handler) handleToolList(w http.ResponseWriter, r *http.Request, rpcReq 
 				ID: "decision_" + rand.Text(), Allowed: true, Rule: "mcp.list",
 				Reason: fmt.Sprintf("Listed %d tools; hid %d tools", visible, hidden), EvaluationTime: evaluationTime,
 			})
+			event.Target = target.name
 			event.Metadata = map[string]any{"mcp.target": target.name, "hidden_tools": hidden}
 			if upstreamErr != nil {
 				event.Metadata["upstream_error"] = true

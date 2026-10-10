@@ -45,7 +45,7 @@ func testMigrations(t *testing.T, postgres bool) {
 			t.Fatal(err)
 		}
 		assertLatestSchema(t, st)
-		logs, total, err := st.ListLogs(ctx, 10, 0, "", "")
+		logs, total, err := st.ListLogs(ctx, LogFilter{Since: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Limit: 10})
 		if err != nil || total != 1 || len(logs) != 1 {
 			t.Fatalf("baseline logs = %v, total=%d, err=%v", logs, total, err)
 		}

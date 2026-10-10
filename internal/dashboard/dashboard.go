@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/gateway"
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
+	"github.com/omniswitch-dev/omniswitch/internal/provider"
+	mcpproxy "github.com/omniswitch-dev/omniswitch/internal/proxy"
+	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 	"github.com/omniswitch-dev/omniswitch/internal/telemetry"
 )
@@ -24,9 +27,18 @@ var staticFiles embed.FS
 
 // Handler serves the dashboard API and embedded web UI.
 type Handler struct {
-	store      *store.Store
-	metrics    *telemetry.Metrics
-	configPath string
+	store             *store.Store
+	metrics           *telemetry.Metrics
+	configPath        string
+	sessionInfo       SessionInfo
+	logPayloadsSource func() bool
+	registry          *provider.Registry
+	router            *router.Router
+	providerTypes     map[string]string
+	replicaHealth     func(string) []ReplicaHealth
+	mcp               *mcpproxy.Handler
+	mcpEnabled        bool
+	mcpTargets        []MCPConfiguredTarget
 }
 
 // New creates a new dashboard handler.
@@ -50,6 +62,20 @@ func (h *Handler) SetConfigPath(path string) {
 // RegisterRoutes adds dashboard routes to the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Dashboard API endpoints.
+	mux.HandleFunc("/api/session", h.getSession)
+	mux.HandleFunc("/api/logs/facets", h.getLogFacets)
+	mux.HandleFunc("/api/logs/export", h.exportLogs)
+	mux.HandleFunc("/api/metrics/timeseries", h.getTimeseries)
+	mux.HandleFunc("/api/metrics/latency", h.getLatency)
+	mux.HandleFunc("/api/guardrails/events", h.getGuardrailEvents)
+	mux.HandleFunc("/api/guardrails/summary", h.getGuardrailSummary)
+	mux.HandleFunc("/api/keys/usage", h.getKeyUsage)
+	mux.HandleFunc("/api/mcp/targets", h.getMCPTargets)
+	mux.HandleFunc("/api/mcp/tools", h.getMCPTools)
+	mux.HandleFunc("/api/mcp/decisions", h.getMCPDecisions)
+	mux.HandleFunc("/api/providers/health", h.getProviderHealth)
+	mux.HandleFunc("/api/providers/", h.resetProviderCircuit)
+	mux.HandleFunc("/api/config/validate", h.validateConfig)
 	mux.HandleFunc("/api/logs", h.getLogs)
 	mux.HandleFunc("/api/metrics", h.getMetrics)
 	mux.HandleFunc("/api/metrics/providers", h.getProviderMetrics)
@@ -77,82 +103,6 @@ func (h *Handler) RegisterPrometheus(mux *http.ServeMux) {
 	mux.HandleFunc("/metrics", h.prometheus)
 }
 
-func (h *Handler) getLogs(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	providerFilter := r.URL.Query().Get("provider")
-	statusFilter := r.URL.Query().Get("status")
-
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-
-	var logs []store.RequestLog
-	var total int
-	var err error
-	if keyID := scopedAPIKeyID(r); keyID != "" {
-		logs, total, err = h.store.ListLogsForAPIKey(r.Context(), keyID, limit, offset, providerFilter, statusFilter)
-	} else {
-		logs, total, err = h.store.ListLogs(r.Context(), limit, offset, providerFilter, statusFilter)
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if logs == nil {
-		logs = []store.RequestLog{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"logs": logs, "total": total, "limit": limit, "offset": offset})
-}
-
-func (h *Handler) getMetrics(w http.ResponseWriter, r *http.Request) {
-	window := r.URL.Query().Get("window")
-	now := time.Now().UTC()
-	since := now.Add(-24 * time.Hour)
-	switch window {
-	case "1h":
-		since = now.Add(-1 * time.Hour)
-	case "6h":
-		since = now.Add(-6 * time.Hour)
-	case "7d":
-		since = now.Add(-7 * 24 * time.Hour)
-	case "30d":
-		since = now.Add(-30 * 24 * time.Hour)
-	}
-
-	var metrics store.Metrics
-	var err error
-	if keyID := scopedAPIKeyID(r); keyID != "" {
-		metrics, err = h.store.GetMetricsForAPIKey(r.Context(), since, keyID)
-	} else {
-		metrics, err = h.store.GetMetrics(r.Context(), since)
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, metrics)
-}
-
-func (h *Handler) getProviderMetrics(w http.ResponseWriter, r *http.Request) {
-	since := time.Now().UTC().Add(-24 * time.Hour)
-	var metrics []store.ProviderMetrics
-	var err error
-	if keyID := scopedAPIKeyID(r); keyID != "" {
-		metrics, err = h.store.GetProviderMetricsForAPIKey(r.Context(), since, keyID)
-	} else {
-		metrics, err = h.store.GetProviderMetrics(r.Context(), since)
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if metrics == nil {
-		metrics = []store.ProviderMetrics{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"providers": metrics})
-}
-
 func (h *Handler) getCostAnalytics(w http.ResponseWriter, r *http.Request) {
 	since := windowStart(r.URL.Query().Get("window"))
 	groupBy := r.URL.Query().Get("groupBy")
@@ -169,21 +119,6 @@ func (h *Handler) getCostAnalytics(w http.ResponseWriter, r *http.Request) {
 		rows = []store.CostAnalyticsRow{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"groupBy": firstNonEmpty(groupBy, "day"), "rows": rows})
-}
-
-func (h *Handler) getTrace(w http.ResponseWriter, r *http.Request) {
-	traceID := strings.TrimPrefix(r.URL.Path, "/api/traces/")
-	traceID = strings.TrimSpace(traceID)
-	if traceID == "" {
-		writeError(w, http.StatusBadRequest, "trace id is required")
-		return
-	}
-	detail, err := h.store.GetTrace(r.Context(), traceID, scopedAPIKeyID(r))
-	if err != nil {
-		writeError(w, http.StatusNotFound, "trace not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, detail)
 }
 
 func (h *Handler) configs(w http.ResponseWriter, r *http.Request) {
@@ -293,47 +228,6 @@ func (h *Handler) configs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) rawConfig(w http.ResponseWriter, r *http.Request) {
-	if h.configPath == "" {
-		writeError(w, http.StatusNotFound, "OMNISWITCH_CONFIG is not set")
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		body, err := os.ReadFile(h.configPath)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		format := normalizedConfigFormat("")
-		if strings.EqualFold(configExt(h.configPath), ".json") {
-			format = "json"
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"path": h.configPath, "format": format, "body": string(body)})
-	case http.MethodPost:
-		var req struct {
-			Body   string `json:"body"`
-			Format string `json:"format"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		format := normalizedConfigFormat(req.Format)
-		if _, err := gatewayconfig.Parse([]byte(req.Body), "."+format); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if err := os.WriteFile(h.configPath, []byte(req.Body), 0o644); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"saved": true, "path": h.configPath})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func isDashboardRoute(path string) bool {
 	switch path {
 	case "/", "/overview", "/playground", "/logs", "/configs", "/guardrails", "/prompts", "/keys", "/providers":
@@ -360,15 +254,9 @@ func serveDashboardIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// scopedAPIKeyID returns the key scope for non-administrative callers. The
-// authentication middleware owns these internal headers; callers cannot set
-// them when authentication is enabled because it overwrites their values.
+// scopedAPIKeyID uses the authentication context, not caller-controlled headers.
 func scopedAPIKeyID(r *http.Request) string {
-	role := r.Header.Get("x-omniswitch-role")
-	if role == "admin" || role == "owner" {
-		return ""
-	}
-	return r.Header.Get("x-omniswitch-key-id")
+	return gateway.ScopedAPIKeyID(r)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -435,5 +323,15 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]any{"error": msg})
+	kind, code := "invalid_request_error", "invalid_request"
+	if status >= 500 {
+		kind, code = "server_error", "server_error"
+	} else if status == http.StatusForbidden {
+		kind, code = "permission_error", "insufficient_role"
+	} else if status == http.StatusUnauthorized {
+		kind, code = "authentication_error", "unauthorized"
+	} else if status == http.StatusNotFound {
+		code = "not_found"
+	}
+	writeJSON(w, status, map[string]any{"error": map[string]string{"message": msg, "type": kind, "code": code}})
 }
