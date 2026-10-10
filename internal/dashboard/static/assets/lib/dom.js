@@ -3,7 +3,8 @@ const listeners = new WeakMap();
 function build(tag, attrs, children, namespace) {
   const el = namespace ? document.createElementNS(namespace, tag) : document.createElement(tag);
   for (const [key, value] of Object.entries(attrs || {})) {
-    if (value === null || value === undefined || value === false) continue;
+    const ariaAttribute = key.startsWith("aria-");
+    if (value === null || value === undefined || (value === false && !ariaAttribute)) continue;
     if (key.startsWith("on")) {
       if (typeof value !== "function") throw new TypeError("Listeners must be functions");
       const type = key.slice(2).toLowerCase();
@@ -15,7 +16,11 @@ function build(tag, attrs, children, namespace) {
     } else if (key === "value") {
       el.value = value;
     } else {
-      el.setAttribute(key === "className" ? "class" : key, value === true ? "" : String(value));
+      // ARIA states are strings, including false; only HTML booleans use presence.
+      el.setAttribute(
+        key === "className" ? "class" : key,
+        value === true && !ariaAttribute ? "" : String(value),
+      );
     }
   }
   for (const child of children.flat(Infinity)) {

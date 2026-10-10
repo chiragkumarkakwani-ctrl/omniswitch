@@ -1235,7 +1235,7 @@ textarea.input {
     height: 245px;
   }
 }
-@media (max-width: 1280px) {
+@media (max-width: 1279px) {
   .app-shell {
     grid-template-columns: 68px minmax(0, 1fr);
   }
@@ -1269,7 +1269,7 @@ textarea.input {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 960px) {
+@media (max-width: 959px) {
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1708,7 +1708,7 @@ textarea.input {
   animation: none !important;
   transition: none !important;
 }
-@media (max-width: 1280px) {
+@media (max-width: 1279px) {
   .instance-card {
     display: none;
   }
@@ -1729,7 +1729,7 @@ textarea.input {
     grid-template-columns: 1fr 1.4fr;
   }
 }
-@media (max-width: 960px) {
+@media (max-width: 959px) {
   .instance-card {
     display: flex;
   }
@@ -1824,7 +1824,7 @@ textarea.input {
 .principal-selector {
   max-width: 320px;
 }
-@media (max-width: 960px) {
+@media (max-width: 959px) {
   .mcp-layout {
     grid-template-columns: minmax(0, 1fr);
   }

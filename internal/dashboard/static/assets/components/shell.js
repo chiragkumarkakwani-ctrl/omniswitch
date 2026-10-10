@@ -68,14 +68,21 @@ export function shell(ctx, onSignOut) {
   }
   const main = h("main", { class: "main", id: "main", tabindex: "-1" }),
     workspace = h("div", { class: "workspace" });
+  const desktop = window.matchMedia("(min-width: 960px)");
   const closeMenu = () => {
+    const wasOpen = document.body.classList.contains("menu-open");
     document.body.classList.remove("menu-open");
     overlay.remove();
     workspace.inert = false;
     aside.removeAttribute("role");
     aside.removeAttribute("aria-modal");
     menu.setAttribute("aria-expanded", "false");
-    menu.focus();
+    if (wasOpen) {
+      const destination = desktop.matches
+        ? aside.querySelector('[aria-current="page"]') || document.getElementById("signin-api-key")
+        : menu;
+      destination?.focus();
+    }
   };
   const overlay = h("button", {
     class: "menu-overlay",
@@ -126,11 +133,16 @@ export function shell(ctx, onSignOut) {
       }
     }
   };
+  const resize = () => {
+    if (desktop.matches && document.body.classList.contains("menu-open")) closeMenu();
+  };
   window.addEventListener("keydown", keyboard);
+  desktop.addEventListener("change", resize);
   ctx.signal.addEventListener(
     "abort",
     () => {
       window.removeEventListener("keydown", keyboard);
+      desktop.removeEventListener("change", resize);
       overlay.remove();
       document.body.classList.remove("menu-open");
       workspace.inert = false;
