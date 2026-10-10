@@ -34,6 +34,7 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 	}
 	return map[string]any{
 		"config_path": settings.configPath,
+		"retention":   retentionPolicySummary(settings.retention),
 		"gateway": map[string]any{
 			"listen":                   settings.listenAddr,
 			"auth_enabled":             settings.authEnabled,

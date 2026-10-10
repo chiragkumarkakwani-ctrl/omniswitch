@@ -11,6 +11,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 type runtimeSettings struct {
@@ -40,6 +41,7 @@ type runtimeSettings struct {
 	shadowProvider         string
 	storageURL             string
 	migrateOnStart         bool
+	retention              store.RetentionPolicy
 	alerts                 gateway.AlertConfig
 	mcpEnabled             bool
 	mcpPolicyPath          string
@@ -76,6 +78,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 		listenAddr:             ":8080",
 		dataDir:                ".",
 		migrateOnStart:         true,
+		retention:              store.DefaultRetentionPolicy(),
 		cacheThreshold:         0.95,
 		cacheTTL:               24 * time.Hour,
 		cacheScope:             "api_key",
@@ -174,10 +177,14 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	for model, route := range parseABConfig(os.Getenv("OMNISWITCH_AB_TEST")) {
 		settings.routes[model] = mergeRoute(settings.routes[model], route)
 	}
+	if err := loadRetentionEnv(&settings); err != nil {
+		return settings, err
+	}
 	return settings, nil
 }
 
 func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
+	applyRetentionConfig(settings, cfg.Retention)
 	if cfg.Gateway.Listen != "" {
 		settings.listenAddr = cfg.Gateway.Listen
 	}

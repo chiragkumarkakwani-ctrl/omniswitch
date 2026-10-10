@@ -224,6 +224,11 @@ func requiredRole(method, path string) string {
 		return "viewer"
 	}
 	switch path {
+	case "/api/retention/sweep":
+		if method == http.MethodPost {
+			return "admin"
+		}
+		return "viewer"
 	case "/api/keys", "/api/virtual-keys", "/api/virtual-keys/rotate", "/api/orgs", "/api/workspaces", "/api/users", "/api/workspace-members":
 		if method != http.MethodGet {
 			return "admin"

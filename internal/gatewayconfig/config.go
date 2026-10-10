@@ -30,6 +30,7 @@ type Config struct {
 	Identity      Identity                `json:"identity,omitempty" yaml:"identity,omitempty"`
 	Authorization Authorization           `json:"authorization,omitempty" yaml:"authorization,omitempty"`
 	RateLimit     RateLimit               `json:"rate_limit,omitempty" yaml:"rate_limit,omitempty"`
+	Retention     Retention               `json:"retention,omitempty" yaml:"retention,omitempty"`
 	Guardrails    Guardrails              `json:"guardrails,omitempty" yaml:"guardrails,omitempty"`
 	MCP           MCP                     `json:"mcp,omitempty" yaml:"mcp,omitempty"`
 	Routes        map[string]router.Route `json:"routes,omitempty" yaml:"routes,omitempty"`
@@ -274,6 +275,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Kind != "" && cfg.Kind != Kind {
 		return fmt.Errorf("unsupported kind %q", cfg.Kind)
+	}
+	if err := validateRetention(cfg.Retention); err != nil {
+		return err
 	}
 	if cfg.Gateway.CacheThreshold != nil && (*cfg.Gateway.CacheThreshold < 0 || *cfg.Gateway.CacheThreshold > 1) {
 		return fmt.Errorf("gateway.cache_threshold must be between 0 and 1")
@@ -608,9 +612,5 @@ func parseDurationValue(value string) (time.Duration, error) {
 	if value == "" {
 		return 0, nil
 	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("parse duration %q: %w", value, err)
-	}
-	return parsed, nil
+	return ParseRetentionDuration(value)
 }

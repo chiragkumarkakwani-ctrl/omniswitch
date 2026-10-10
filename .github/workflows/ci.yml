@@ -35,6 +35,24 @@ jobs:
       - name: Run tests with race detector and coverage
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
+      - name: Enforce internal/store coverage floor (60%)
+        run: |
+          awk '
+            /^github.com\/omniswitch-dev\/omniswitch\/internal\/store\// {
+              statements += $2
+              if ($3 > 0) covered += $2
+            }
+            END {
+              if (statements == 0) {
+                print "No internal/store coverage data"
+                exit 1
+              }
+              percentage = 100 * covered / statements
+              printf "internal/store coverage %.1f%% (floor 60%%)\n", percentage
+              if (percentage < 60) exit 1
+            }
+          ' coverage.out
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v5
         with:

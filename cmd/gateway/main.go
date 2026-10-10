@@ -74,28 +74,13 @@ func runServe() {
 		}
 	}()
 
-	// Initialize store. OMNISWITCH_DATABASE_URL takes precedence over
-	// gateway.storage_url from the config file so an operator can always
-	// override storage without editing config-as-code.
-	var st *store.Store
-	dsn := strings.TrimSpace(os.Getenv("OMNISWITCH_DATABASE_URL"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(settings.storageURL)
-	}
-	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		st, err = store.OpenPostgres(dsn, store.WithMigrateOnStart(settings.migrateOnStart))
-		if err != nil {
-			log.Fatalf("failed to connect to postgres: %v", err)
-		}
-		log.Printf("using PostgreSQL storage (shared state across replicas)")
-	} else {
-		st, err = store.New(settings.dataDir, store.WithMigrateOnStart(settings.migrateOnStart))
-		if err != nil {
-			log.Fatalf("failed to initialize store: %v", err)
-		}
-	}
+	// Serve and migration commands share storage selection and URL precedence.
+	st, err := openConfiguredStore(settings, settings.migrateOnStart)
 	if err != nil {
 		log.Fatalf("failed to initialize store: %v", err)
+	}
+	if st.Driver() == "postgres" {
+		log.Printf("using PostgreSQL storage (shared state across replicas)")
 	}
 	defer st.Close()
 	if err := ensureBootstrapKey(context.Background(), st, settings); err != nil {
@@ -155,20 +140,30 @@ func runServe() {
 		defer mcpHandler.Close()
 	}
 
+	retention := newRetentionController(st, settings.retention, gw.LogPayloads)
+	logRetentionPolicy(settings.retention)
+	retentionCtx, stopRetention := context.WithCancel(context.Background())
+	retentionStopped := retention.start(retentionCtx)
+	defer func() {
+		stopRetention()
+		<-retentionStopped
+	}()
+
 	// Build mux and wrap it with middleware.
 	mux := newGatewayMux(routeHandlers{
-		settings: settings,
-		registry: registry,
-		store:    st,
-		gateway:  gw,
-		admin:    adminHandler,
-		feedback: feedbackHandler,
-		prompt:   promptHandler,
-		org:      orgHandler,
-		eval:     evalHandler,
-		vault:    vaultHandler,
-		dash:     dash,
-		mcp:      mcpHandler,
+		settings:  settings,
+		registry:  registry,
+		store:     st,
+		retention: retention,
+		gateway:   gw,
+		admin:     adminHandler,
+		feedback:  feedbackHandler,
+		prompt:    promptHandler,
+		org:       orgHandler,
+		eval:      evalHandler,
+		vault:     vaultHandler,
+		dash:      dash,
+		mcp:       mcpHandler,
 	})
 	handler, closeRateLimiter, err := wrapGatewayMiddleware(settings, st, mux)
 	if err != nil {

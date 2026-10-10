@@ -297,6 +297,69 @@ implemented in this release. Configuring `authorization.external.url` or
 `authorization.external.timeout` fails config validation with a clear error;
 use `authorization.rules` (CEL) instead.
 
+## Data Retention
+
+Retention is enabled by default: ordinary request logs, guardrail events, and
+limited/denied requests keep 30 days; logged payloads and shadow requests keep
+7 days. Older data is removed automatically. Set a policy to `0` to keep that
+class forever. Payloads can only survive while their request-log row survives.
+Request logs with `status: limited` or `decision: DENY` use the independent
+`limited_and_denied` policy, not the ordinary `request_logs` policy.
+
+All fields below take effect at startup and require a restart after edits.
+Environment values override the config file. Durations accept whole days
+(`30d`), Go duration strings (`168h`, `1h`, `500ms`), or `0`; invalid values
+fail startup rather than silently falling back to a deletion policy.
+
+| Field | Default | Environment override | Effect |
+|---|---|---|---|
+| `retention` | Enabled with the defaults below | — | Top-level retention configuration block; restart required. |
+| `retention.request_logs` | `30d` | `OMNISWITCH_RETENTION_REQUEST_LOGS` | Retention for ordinary request-log rows; `0` keeps them forever. |
+| `retention.payloads` | `7d` | `OMNISWITCH_RETENTION_PAYLOADS` | Clears `request_body` and `response_body`, keeping the row; `0` preserves bodies while their row exists. |
+| `retention.guardrail_events` | `30d` | `OMNISWITCH_RETENTION_GUARDRAIL_EVENTS` | Retention for guardrail-event rows; `0` keeps them forever. |
+| `retention.shadow_requests` | `7d` | `OMNISWITCH_RETENTION_SHADOW_REQUESTS` | Retention for shadow-request rows; `0` keeps them forever. |
+| `retention.limited_and_denied` | `30d` | `OMNISWITCH_RETENTION_LIMITED_AND_DENIED` | Retention for request logs with status `limited` or decision `DENY`; `0` keeps them forever. |
+| `retention.sweep_interval` | `1h` | `OMNISWITCH_RETENTION_SWEEP_INTERVAL` | Positive time between scheduled sweeps; the first sweep waits one full interval. |
+| `retention.batch_size` | `5000` | `OMNISWITCH_RETENTION_BATCH_SIZE` | Positive maximum rows per update/delete statement. |
+
+```yaml
+retention:
+  request_logs: 30d
+  payloads: 7d
+  guardrail_events: 30d
+  shadow_requests: 7d
+  limited_and_denied: 30d
+  sweep_interval: 1h
+  batch_size: 5000
+```
+
+Each sweep clears expired payloads before deleting rows, then removes expired
+semantic-cache entries using their `expires_at` value. Feedback, API/provider
+keys, prompts, configs, and other durable records are never pruned. If all five
+policy durations are `0`, both scheduled and manual sweeps are disabled,
+including expired-cache cleanup. A startup log line prints the effective policy.
+PostgreSQL uses a nonblocking advisory lock: only one concurrent replica sweeps;
+other replicas skip that run. Shutdown cancels and waits for the background job.
+Sweeps do not run against a database with pending schema migrations.
+
+`GET /api/retention` requires viewer access and reports the effective policy in
+seconds, `sweep_interval_seconds`, live `payload_logging`, and the last sweep's
+per-table deletion counts, `payloads_cleared`, and error. `POST
+/api/retention/sweep` requires admin access, runs synchronously, and returns the
+same object. `last_run` and `next_run` are `null` until the first sweep and when
+all five policies are `0`. Sweep state is process-local and resets on restart;
+skipped replicas do not claim another replica's counts. `GET /api/config.retention`
+contains the same five-field object as the retention endpoint's `policy`.
+
+### SQLite filenames
+
+The data directory now uses `omniswitch.db` and `omniswitch_cache.db`. On first
+open, legacy `sentinel.db` and `sentinel_cache.db` are moved with any `-wal` and
+`-shm` sidecars, with a log line for each move. Stop old gateway processes and
+back up the database and sidecars before upgrading. If old and new database
+files both exist, the new database wins; the old database and its sidecars stay
+untouched and a warning names the old file. No existing destination is overwritten.
+
 ## Authorization and Rate Limits
 
 `authorization.rules` are CEL policies evaluated after API-key authentication.

@@ -28,18 +28,19 @@ import (
 // routeHandlers holds the handlers behind the authenticated gateway mux.
 // mcp is nil when MCP is disabled.
 type routeHandlers struct {
-	settings runtimeSettings
-	registry *provider.Registry
-	store    *store.Store
-	gateway  *gateway.Handler
-	admin    *admin.Handler
-	feedback *feedback.Handler
-	prompt   *prompt.Handler
-	org      *org.Handler
-	eval     *eval.Handler
-	vault    *vault.Handler
-	dash     *dashboard.Handler
-	mcp      *mcpproxy.Handler
+	settings  runtimeSettings
+	registry  *provider.Registry
+	store     *store.Store
+	retention *retentionController
+	gateway   *gateway.Handler
+	admin     *admin.Handler
+	feedback  *feedback.Handler
+	prompt    *prompt.Handler
+	org       *org.Handler
+	eval      *eval.Handler
+	vault     *vault.Handler
+	dash      *dashboard.Handler
+	mcp       *mcpproxy.Handler
 }
 
 // newGatewayMux registers every route that sits behind the CORS, logging,
@@ -48,6 +49,14 @@ func newGatewayMux(h routeHandlers) *http.ServeMux {
 	mux := http.NewServeMux()
 	registerGatewayAPIRoutes(mux, h.gateway)
 	registerInfoRoutes(mux, h.settings, h.registry, h.store)
+	if h.retention == nil {
+		payloadLogging := func() bool { return h.settings.logPayloads }
+		if h.gateway != nil {
+			payloadLogging = h.gateway.LogPayloads
+		}
+		h.retention = newRetentionController(h.store, h.settings.retention, payloadLogging)
+	}
+	registerRetentionRoutes(mux, h.retention)
 	if h.mcp != nil {
 		mux.Handle("/mcp", h.mcp)
 		mux.Handle("/v1/mcp/tools/call", h.mcp)
