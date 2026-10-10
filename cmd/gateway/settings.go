@@ -516,6 +516,11 @@ func applyHotConfigChecked(cfg gatewayconfig.Config, rtr *router.Router, gw *gat
 	}
 	if enforcer := gw.Limits(); enforcer != nil {
 		next := base
+		// Config conversion must not mutate the startup route baseline.
+		next.routes = make(map[string]router.Route, len(base.routes))
+		for model, route := range base.routes {
+			next.routes[model] = route
+		}
 		applyGatewayConfig(&next, cfg)
 		next.rateLimitRequests = envInt("OMNISWITCH_RATE_LIMIT_REQUESTS", next.rateLimitRequests)
 		next.rateLimitWindow = envDuration("OMNISWITCH_RATE_LIMIT_WINDOW", next.rateLimitWindow)

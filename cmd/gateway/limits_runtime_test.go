@@ -158,8 +158,9 @@ func TestHotReloadKeepsExplicitEnvironmentQuotaOverrides(t *testing.T) {
 	previous := catalog.Active()
 	t.Cleanup(func() { catalog.Activate(previous) })
 	cfg := gatewayconfig.Config{}
-	cfg.RateLimit.Requests = 99
-	cfg.RateLimit.Window.Duration = time.Second
+	requests := 99
+	cfg.RateLimit.Requests = &requests
+	cfg.RateLimit.Window = &gatewayconfig.Duration{Duration: time.Second}
 	if _, _, err := applyHotConfigChecked(cfg, rtr, gw, runtimeSettings{}, nil); err != nil {
 		t.Fatal(err)
 	}
