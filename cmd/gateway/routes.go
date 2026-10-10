@@ -16,10 +16,12 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/eval"
 	"github.com/omniswitch-dev/omniswitch/internal/feedback"
 	"github.com/omniswitch-dev/omniswitch/internal/gateway"
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
 	"github.com/omniswitch-dev/omniswitch/internal/org"
 	"github.com/omniswitch-dev/omniswitch/internal/policy"
 	"github.com/omniswitch-dev/omniswitch/internal/prompt"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
+	"github.com/omniswitch-dev/omniswitch/internal/provider/catalog"
 	mcpproxy "github.com/omniswitch-dev/omniswitch/internal/proxy"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 	"github.com/omniswitch-dev/omniswitch/internal/vault"
@@ -47,7 +49,9 @@ type routeHandlers struct {
 func newGatewayMux(h routeHandlers) *http.ServeMux {
 	mux := http.NewServeMux()
 	registerGatewayAPIRoutes(mux, h.gateway)
-	registerInfoRoutes(mux, h.settings, h.registry, h.store)
+	registerInfoRoutes(mux, h.settings, h.registry, h.store, h.gateway)
+	mux.HandleFunc("/api/catalog", h.gateway.Catalog)
+	mux.HandleFunc("/api/limits/usage", h.gateway.LimitsUsage)
 	if h.mcp != nil {
 		mux.Handle("/mcp", h.mcp)
 		mux.Handle("/v1/mcp/tools/call", h.mcp)
@@ -82,7 +86,7 @@ func registerGatewayAPIRoutes(mux *http.ServeMux, gw *gateway.Handler) {
 
 // registerInfoRoutes registers the read-only provider, config, and version
 // endpoints.
-func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *provider.Registry, st *store.Store) {
+func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *provider.Registry, st *store.Store, handlers ...*gateway.Handler) {
 	mux.HandleFunc("/api/providers", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -102,6 +106,13 @@ func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *
 		}
 		summary := runtimeConfigSummary(settings, registry)
 		summary["storage"] = storage
+		summary["pricing"] = pricingSummary(catalog.Active())
+		if len(handlers) > 0 && handlers[0] != nil && handlers[0].Limits() != nil {
+			options := handlers[0].Limits().Options()
+			limitSummary := summary["rate_limit"].(map[string]any)
+			limitSummary["requests"], limitSummary["window"], limitSummary["fail_open"] = options.Requests, options.Window.String(), options.FailOpen
+			limitSummary["policies"] = policySummaries(options.Policies)
+		}
 		writeJSON(w, http.StatusOK, summary)
 	})
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +255,7 @@ func registerEvalRoutes(mux *http.ServeMux, evalHandler *eval.Handler) {
 // wrapGatewayMiddleware wraps mux with CORS, request logging,
 // authentication, authorization, and rate limiting, outermost first. The
 // returned function releases the rate limiter backend.
-func wrapGatewayMiddleware(settings runtimeSettings, st *store.Store, mux http.Handler) (http.Handler, func(), error) {
+func wrapGatewayMiddleware(settings runtimeSettings, st *store.Store, mux http.Handler, handlers ...*gateway.Handler) (http.Handler, func(), error) {
 	auth := gateway.NewAuthMiddleware(st, settings.authEnabled)
 	if settings.oidcJWKSURL != "" {
 		oidcAuthenticator, err := gateway.NewJWTAuthenticator(gateway.JWTAuthenticatorConfig{
@@ -271,7 +282,13 @@ func wrapGatewayMiddleware(settings runtimeSettings, st *store.Store, mux http.H
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize rate limiter: %w", err)
 	}
-	handler := gateway.CORSMiddlewareWithOrigins(settings.corsOrigins, gateway.LoggingMiddleware(auth.Wrap(authorize.Wrap(rateLimiter.Wrap(mux)))))
+	rateLimiter.SetStore(st)
+	for _, handler := range handlers {
+		if handler != nil {
+			handler.SetLimits(rateLimiter.Enforcer())
+		}
+	}
+	handler := rateLimiter.Headers(gateway.CORSMiddlewareWithOrigins(settings.corsOrigins, gateway.LoggingMiddleware(auth.Wrap(authorize.Wrap(rateLimiter.Wrap(mux))))))
 	return handler, closeRateLimiter, nil
 }
 
@@ -286,30 +303,35 @@ func newTopMux(health *healthState, handler http.Handler) *http.ServeMux {
 }
 
 func buildRateLimiter(settings runtimeSettings) (*gateway.RateLimiter, func(), error) {
-	if strings.TrimSpace(settings.rateLimitRedisURL) == "" {
-		return gateway.NewRateLimiter(settings.rateLimitRequests, settings.rateLimitWindow), func() {}, nil
-	}
-
-	backend, err := gateway.NewRedisRateLimitBackend(settings.rateLimitRedisURL, settings.rateLimitPrefix)
-	if err != nil {
-		return nil, nil, err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := backend.Ping(ctx); err != nil {
-		_ = backend.Close()
-		return nil, nil, err
-	}
-	return gateway.NewRateLimiterWithBackend(
-			settings.rateLimitRequests,
-			settings.rateLimitWindow,
-			backend,
-			settings.rateLimitFailOpen,
-		), func() {
-			if err := backend.Close(); err != nil {
+	var backend limits.Backend
+	closeBackend := func() {}
+	if strings.TrimSpace(settings.rateLimitRedisURL) != "" {
+		redisBackend, err := limits.NewRedisBackend(settings.rateLimitRedisURL, settings.rateLimitPrefix)
+		if err != nil {
+			return nil, nil, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := redisBackend.Ping(ctx); err != nil {
+			if !settings.rateLimitFailOpen {
+				_ = redisBackend.Close()
+				return nil, nil, err
+			}
+			log.Printf("rate limit Redis startup check failed open: %v", err)
+		}
+		backend = redisBackend
+		closeBackend = func() {
+			if err := redisBackend.Close(); err != nil {
 				log.Printf("failed to close rate limit Redis client: %v", err)
 			}
-		}, nil
+		}
+	}
+	limiter := gateway.NewRateLimiterWithBackend(settings.rateLimitRequests, settings.rateLimitWindow, backend, settings.rateLimitFailOpen)
+	if err := limiter.Enforcer().Update(settings.limitOptions()); err != nil {
+		closeBackend()
+		return nil, nil, err
+	}
+	return limiter, closeBackend, nil
 }
 
 // buildMCPHandler loads the MCP policy and targets and returns the MCP proxy

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/gateway"
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
+	"github.com/omniswitch-dev/omniswitch/internal/provider/catalog"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
 )
 
@@ -31,6 +34,10 @@ type runtimeSettings struct {
 	rateLimitRedisURL      string
 	rateLimitPrefix        string
 	rateLimitFailOpen      bool
+	rateLimitPolicies      []limits.Policy
+	pricingCatalogFile     string
+	pricingOverrides       []catalog.Override
+	pricingCatalog         *catalog.Catalog
 	guardrailStreamBuffer  bool
 	maxRequestBytes        int64
 	readHeaderTimeout      time.Duration
@@ -174,10 +181,18 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	for model, route := range parseABConfig(os.Getenv("OMNISWITCH_AB_TEST")) {
 		settings.routes[model] = mergeRoute(settings.routes[model], route)
 	}
+	effectiveCatalog, err := catalog.Load(resolveCatalogFile(settings.configPath, settings.pricingCatalogFile), settings.pricingOverrides)
+	if err != nil {
+		return settings, err
+	}
+	settings.pricingCatalog = effectiveCatalog
 	return settings, nil
 }
 
 func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
+	settings.rateLimitPolicies = append([]limits.Policy(nil), cfg.RateLimit.Policies...)
+	settings.pricingCatalogFile = cfg.Pricing.CatalogFile
+	settings.pricingOverrides = append([]catalog.Override(nil), cfg.Pricing.Overrides...)
 	if cfg.Gateway.Listen != "" {
 		settings.listenAddr = cfg.Gateway.Listen
 	}
@@ -467,7 +482,12 @@ func startConfigReloader(path string, rtr *router.Router, gw *gateway.Handler, b
 				log.Printf("hot-reload skipped (config invalid, keeping previous configuration): %v", err)
 				continue
 			}
-			prevFileRoutes, _ = applyHotConfig(cfg, rtr, gw, base, prevFileRoutes)
+			nextRoutes, _, err := applyHotConfigChecked(cfg, rtr, gw, base, prevFileRoutes)
+			if err != nil {
+				log.Printf("hot-reload skipped (keeping previous configuration): %v", err)
+				continue
+			}
+			prevFileRoutes = nextRoutes
 			log.Printf("configuration hot-reloaded from %s", path)
 		}
 	}()
@@ -479,6 +499,33 @@ func startConfigReloader(path string, rtr *router.Router, gw *gateway.Handler, b
 // from environment or A/B configuration survive across reloads. The returned
 // map is the new set of file-owned routes.
 func applyHotConfig(cfg gatewayconfig.Config, rtr *router.Router, gw *gateway.Handler, base runtimeSettings, prevFileRoutes map[string]router.Route) (map[string]router.Route, *guardrail.Engine) {
+	routes, gr, err := applyHotConfigChecked(cfg, rtr, gw, base, prevFileRoutes)
+	if err != nil {
+		log.Printf("hot-reload skipped (keeping previous configuration): %v", err)
+	}
+	return routes, gr
+}
+
+func applyHotConfigChecked(cfg gatewayconfig.Config, rtr *router.Router, gw *gateway.Handler, base runtimeSettings, prevFileRoutes map[string]router.Route) (map[string]router.Route, *guardrail.Engine, error) {
+	if err := gatewayconfig.Validate(cfg); err != nil {
+		return prevFileRoutes, nil, err
+	}
+	nextCatalog, err := catalog.Load(resolveCatalogFile(base.configPath, cfg.Pricing.CatalogFile), cfg.Pricing.Overrides)
+	if err != nil {
+		return prevFileRoutes, nil, err
+	}
+	if enforcer := gw.Limits(); enforcer != nil {
+		next := base
+		applyGatewayConfig(&next, cfg)
+		next.rateLimitRequests = envInt("OMNISWITCH_RATE_LIMIT_REQUESTS", next.rateLimitRequests)
+		next.rateLimitWindow = envDuration("OMNISWITCH_RATE_LIMIT_WINDOW", next.rateLimitWindow)
+		next.rateLimitFailOpen = envBool("OMNISWITCH_RATE_LIMIT_FAIL_OPEN", next.rateLimitFailOpen)
+		if err := enforcer.Update(next.limitOptions()); err != nil {
+			return prevFileRoutes, nil, err
+		}
+	}
+	catalog.Activate(nextCatalog)
+
 	effective := make(map[string]router.Route, len(base.routes)+len(cfg.Routes))
 	for model, route := range base.routes {
 		effective[model] = route
@@ -547,7 +594,7 @@ func applyHotConfig(cfg gatewayconfig.Config, rtr *router.Router, gw *gateway.Ha
 	if failures > 0 && cooldown > 0 {
 		rtr.SetCircuitBreaker(router.NewCircuitBreaker(failures, cooldown))
 	}
-	return fileRoutes, gr
+	return fileRoutes, gr, nil
 }
 
 func prevRouteOwnedByFile(prev map[string]router.Route, model string) bool {
@@ -724,4 +771,15 @@ func parseABConfig(config string) map[string]router.Route {
 		}
 	}
 	return routes
+}
+
+func resolveCatalogFile(configPath, file string) string {
+	if file == "" || filepath.IsAbs(file) || configPath == "" {
+		return file
+	}
+	return filepath.Join(filepath.Dir(configPath), file)
+}
+
+func (settings runtimeSettings) limitOptions() limits.Options {
+	return limits.Options{Requests: settings.rateLimitRequests, Window: settings.rateLimitWindow, Policies: settings.rateLimitPolicies, FailOpen: settings.rateLimitFailOpen}
 }

@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,14 +27,17 @@ type AuthMiddleware struct {
 // management handlers use this instead of trusting caller-provided role or
 // workspace headers.
 type Identity struct {
-	APIKeyID       string
-	RateLimit      int
-	AuthMethod     string
-	Subject        string
-	WorkspaceID    string
-	OrganizationID string
-	Role           string
-	Claims         map[string]any
+	APIKeyID          string
+	RateLimit         int
+	RequestsPerMinute int
+	TokensPerMinute   int
+	USDPerDay         float64
+	AuthMethod        string
+	Subject           string
+	WorkspaceID       string
+	OrganizationID    string
+	Role              string
+	Claims            map[string]any
 }
 
 // TokenAuthenticator validates a bearer token from an external identity
@@ -100,12 +102,15 @@ func (a *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 				}
 			}
 			a.serveIdentity(w, r, next, Identity{
-				APIKeyID:       apiKey.ID,
-				RateLimit:      apiKey.RateLimit,
-				AuthMethod:     "api_key",
-				WorkspaceID:    apiKey.WorkspaceID,
-				OrganizationID: organizationID,
-				Role:           normalizeRole(apiKey.Role),
+				APIKeyID:          apiKey.ID,
+				RateLimit:         apiKey.RateLimit,
+				RequestsPerMinute: apiKey.RequestsPerMinute,
+				TokensPerMinute:   apiKey.TokensPerMinute,
+				USDPerDay:         apiKey.USDPerDay,
+				AuthMethod:        "api_key",
+				WorkspaceID:       apiKey.WorkspaceID,
+				OrganizationID:    organizationID,
+				Role:              normalizeRole(apiKey.Role),
 			})
 			return
 		}
@@ -270,110 +275,6 @@ func roleRank(role string) int {
 	}
 }
 
-// RateLimitBackend makes quota enforcement portable across local and shared
-// deployments. Implementations return an optional retry-after duration.
-type RateLimitBackend interface {
-	Allow(ctx context.Context, key string, limit int, interval time.Duration) (allowed bool, retryAfter time.Duration, err error)
-}
-
-// RateLimiter applies per-key limits using a local or distributed backend.
-type RateLimiter struct {
-	backend  RateLimitBackend
-	limit    int
-	interval time.Duration
-	failOpen bool
-}
-
-func NewRateLimiter(limit int, interval time.Duration) *RateLimiter {
-	return NewRateLimiterWithBackend(limit, interval, newLocalRateLimitBackend(), false)
-}
-
-func NewRateLimiterWithBackend(limit int, interval time.Duration, backend RateLimitBackend, failOpen bool) *RateLimiter {
-	if backend == nil {
-		backend = newLocalRateLimitBackend()
-	}
-	return &RateLimiter{backend: backend, limit: limit, interval: interval, failOpen: failOpen}
-}
-
-func (rl *RateLimiter) Wrap(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.Header.Get("x-omniswitch-key-id")
-		if key == "" {
-			key = remoteHost(r.RemoteAddr)
-		}
-		limit := rl.limit
-		if header := r.Header.Get("x-omniswitch-rate-limit"); header != "" {
-			if parsed, err := strconv.Atoi(header); err == nil && parsed > 0 {
-				limit = parsed
-			}
-		}
-
-		allowed, retryAfter, err := rl.backend.Allow(r.Context(), key, limit, rl.interval)
-		if err != nil {
-			if rl.failOpen {
-				log.Printf("rate limit backend failure (allowing request): %v", err)
-				next.ServeHTTP(w, r)
-				return
-			}
-			writeError(w, http.StatusServiceUnavailable, "rate limit backend unavailable")
-			return
-		}
-		if !allowed {
-			if retryAfter > 0 {
-				w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retryAfter.Seconds()))))
-			}
-			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func remoteHost(remoteAddr string) string {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err == nil && host != "" {
-		return host
-	}
-	return remoteAddr
-}
-
-type localRateLimitBackend struct {
-	mu      sync.Mutex
-	windows map[string][]time.Time
-}
-
-func newLocalRateLimitBackend() *localRateLimitBackend {
-	return &localRateLimitBackend{windows: make(map[string][]time.Time)}
-}
-
-func (backend *localRateLimitBackend) Allow(_ context.Context, key string, limit int, interval time.Duration) (bool, time.Duration, error) {
-	backend.mu.Lock()
-	defer backend.mu.Unlock()
-
-	now := time.Now()
-	cutoff := now.Add(-interval)
-
-	timestamps := backend.windows[key]
-	var valid []time.Time
-	for _, ts := range timestamps {
-		if ts.After(cutoff) {
-			valid = append(valid, ts)
-		}
-	}
-
-	if len(valid) >= limit {
-		backend.windows[key] = valid
-		retryAfter := interval
-		if len(valid) > 0 {
-			retryAfter = time.Until(valid[0].Add(interval))
-		}
-		return false, retryAfter, nil
-	}
-
-	backend.windows[key] = append(valid, now)
-	return true, 0, nil
-}
-
 // LoggingMiddleware logs every request.
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -416,6 +317,7 @@ func CORSMiddlewareWithOrigins(origins []string, next http.Handler) http.Handler
 		if allowAny || origin != "" {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-omniswitch-provider, x-omniswitch-trace-id, x-omniswitch-session-id")
+			w.Header().Set("Access-Control-Expose-Headers", "Retry-After, x-ratelimit-limit-requests, x-ratelimit-remaining-requests, x-ratelimit-reset-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-tokens, x-ratelimit-reset-tokens, x-omniswitch-limit-usd, x-omniswitch-remaining-usd, x-omniswitch-reset-usd")
 		}
 		if r.Method == http.MethodOptions {
 			if !allowAny {

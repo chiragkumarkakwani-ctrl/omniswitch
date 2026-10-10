@@ -21,6 +21,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/org"
 	"github.com/omniswitch-dev/omniswitch/internal/prompt"
+	"github.com/omniswitch-dev/omniswitch/internal/provider/catalog"
 	mcpproxy "github.com/omniswitch-dev/omniswitch/internal/proxy"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
@@ -107,6 +108,7 @@ func runServe() {
 	}
 
 	// Initialize provider registry.
+	catalog.Activate(settings.pricingCatalog)
 	registry := buildProviderRegistry(settings, vaultManager)
 
 	if len(registry.Names()) == 0 {
@@ -133,10 +135,6 @@ func runServe() {
 	gw.SetMaxRequestBytes(settings.maxRequestBytes)
 	gw.SetShadowProvider(settings.shadowProvider)
 	gw.SetAlerts(settings.alerts)
-	if settings.configPath != "" {
-		startConfigReloader(settings.configPath, rtr, gw, settings)
-		log.Printf("config hot-reload enabled for %s", settings.configPath)
-	}
 	adminHandler := admin.New(st)
 	feedbackHandler := feedback.New(st)
 	promptHandler := prompt.New(st)
@@ -170,11 +168,16 @@ func runServe() {
 		dash:     dash,
 		mcp:      mcpHandler,
 	})
-	handler, closeRateLimiter, err := wrapGatewayMiddleware(settings, st, mux)
+	handler, closeRateLimiter, err := wrapGatewayMiddleware(settings, st, mux, gw)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeRateLimiter()
+	if settings.configPath != "" {
+		startConfigReloader(settings.configPath, rtr, gw, settings)
+		log.Printf("config hot-reload enabled for %s", settings.configPath)
+	}
+
 	topMux := newTopMux(newHealthState(st, registry, settings.allowNoProviders), handler)
 
 	// Print startup banner.

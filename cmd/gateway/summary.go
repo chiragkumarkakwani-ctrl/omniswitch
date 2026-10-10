@@ -7,7 +7,9 @@ import (
 
 	"github.com/omniswitch-dev/omniswitch/internal/gateway"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
+	"github.com/omniswitch-dev/omniswitch/internal/provider/catalog"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
@@ -58,7 +60,9 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 			"backend":   rateLimitBackendName(settings),
 			"prefix":    settings.rateLimitPrefix,
 			"fail_open": settings.rateLimitFailOpen,
+			"policies":  policySummaries(settings.rateLimitPolicies),
 		},
+		"pricing": pricingSummary(settings.pricingCatalog),
 		"identity": map[string]any{
 			"api_keys_enabled": settings.authEnabled,
 			"oidc": map[string]any{
@@ -248,4 +252,22 @@ func mcpTargetSummaries(settings runtimeSettings) []map[string]any {
 		})
 	}
 	return summaries
+}
+
+func policySummaries(policies []limits.Policy) []limits.Policy {
+	out := make([]limits.Policy, len(policies))
+	copy(out, policies)
+	for index := range out {
+		if out[index].Action == "" {
+			out[index].Action = limits.Reject
+		}
+	}
+	return out
+}
+
+func pricingSummary(effective *catalog.Catalog) map[string]any {
+	if effective == nil {
+		effective = catalog.Active()
+	}
+	return map[string]any{"catalog_verified_on": effective.VerifiedOn(), "catalog_file": effective.File(), "overrides": effective.OverrideCount()}
 }

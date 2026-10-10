@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
+	"github.com/omniswitch-dev/omniswitch/internal/provider/catalog"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
 
 	"go.yaml.in/yaml/v3"
@@ -29,6 +31,7 @@ type Config struct {
 	Providers     []ProviderAccount       `json:"providers,omitempty" yaml:"providers,omitempty"`
 	Identity      Identity                `json:"identity,omitempty" yaml:"identity,omitempty"`
 	Authorization Authorization           `json:"authorization,omitempty" yaml:"authorization,omitempty"`
+	Pricing       Pricing                 `json:"pricing,omitempty" yaml:"pricing,omitempty"`
 	RateLimit     RateLimit               `json:"rate_limit,omitempty" yaml:"rate_limit,omitempty"`
 	Guardrails    Guardrails              `json:"guardrails,omitempty" yaml:"guardrails,omitempty"`
 	MCP           MCP                     `json:"mcp,omitempty" yaml:"mcp,omitempty"`
@@ -71,14 +74,20 @@ type ExternalAuthZ struct {
 	Timeout *Duration `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 }
 
-// RateLimit configures a request quota. When RedisURL is omitted, OmniSwitch
-// uses its local sliding-window backend.
+// RateLimit configures the default request quota and additional fixed-window
+// policies. Redis shares these counters across replicas.
 type RateLimit struct {
-	Requests *int      `json:"requests,omitempty" yaml:"requests,omitempty"`
-	Window   *Duration `json:"window,omitempty" yaml:"window,omitempty"`
-	RedisURL string    `json:"redis_url,omitempty" yaml:"redis_url,omitempty"`
-	Prefix   string    `json:"prefix,omitempty" yaml:"prefix,omitempty"`
-	FailOpen *bool     `json:"fail_open,omitempty" yaml:"fail_open,omitempty"`
+	Requests *int            `json:"requests,omitempty" yaml:"requests,omitempty"`
+	Window   *Duration       `json:"window,omitempty" yaml:"window,omitempty"`
+	RedisURL string          `json:"redis_url,omitempty" yaml:"redis_url,omitempty"`
+	Prefix   string          `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	FailOpen *bool           `json:"fail_open,omitempty" yaml:"fail_open,omitempty"`
+	Policies []limits.Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+}
+
+type Pricing struct {
+	CatalogFile string             `json:"catalog_file,omitempty" yaml:"catalog_file,omitempty"`
+	Overrides   []catalog.Override `json:"overrides,omitempty" yaml:"overrides,omitempty"`
 }
 
 type Gateway struct {
@@ -242,6 +251,14 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if file := cfg.Pricing.CatalogFile; file != "" {
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(filepath.Dir(path), file)
+		}
+		if _, err := catalog.Load(file, cfg.Pricing.Overrides); err != nil {
+			return Config{}, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -369,6 +386,12 @@ func Validate(cfg Config) error {
 	}
 	if cfg.RateLimit.Window != nil && cfg.RateLimit.Window.Duration <= 0 {
 		return fmt.Errorf("rate_limit.window must be positive")
+	}
+	if err := limits.ValidatePolicies(cfg.RateLimit.Policies); err != nil {
+		return err
+	}
+	if err := catalog.ValidateOverrides(cfg.Pricing.Overrides); err != nil {
+		return err
 	}
 	for i, account := range cfg.Providers {
 		if strings.TrimSpace(account.Name) == "" {

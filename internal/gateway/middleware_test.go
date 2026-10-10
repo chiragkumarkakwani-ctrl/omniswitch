@@ -12,13 +12,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 type rateLimitBackendFunc func(context.Context, string, int, time.Duration) (bool, time.Duration, error)
 
-func (fn rateLimitBackendFunc) Allow(ctx context.Context, key string, limit int, interval time.Duration) (bool, time.Duration, error) {
-	return fn(ctx, key, limit, interval)
+func (fn rateLimitBackendFunc) Consume(ctx context.Context, charges []limits.Charge) ([]int64, int, error) {
+	_, _, err := fn(ctx, "", 0, 0)
+	return make([]int64, len(charges)), -1, err
+}
+func (fn rateLimitBackendFunc) Adjust(context.Context, []limits.Charge) error { return nil }
+func (fn rateLimitBackendFunc) Counts(context.Context, []string) ([]int64, error) {
+	return []int64{0}, nil
+}
+func (fn rateLimitBackendFunc) List(context.Context, string) (map[string]int64, error) {
+	return map[string]int64{}, nil
 }
 
 type tokenAuthenticatorFunc func(context.Context, string) (Identity, error)

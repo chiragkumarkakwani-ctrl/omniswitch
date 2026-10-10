@@ -22,6 +22,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/cache"
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
@@ -33,6 +34,7 @@ type Handler struct {
 	router                *router.Router
 	store                 *store.Store
 	guardrails            atomic.Pointer[guardrail.Engine]
+	limiter               atomic.Pointer[limits.Enforcer]
 	cacheThreshold        float64
 	cacheTTL              time.Duration
 	cacheScope            string
@@ -280,8 +282,23 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		recordTraceSpan(ctx, "guardrail_input", "", "ok", stageStart, nil)
 	}
 
+	limitCtx, limitState, err := h.startLimits(ctx, w, r, req.Model, limits.EstimateChat(req))
+	if limitState.failure(err) {
+		return
+	}
+	ctx = limitCtx
+	defer limitState.release()
+
 	backendReq := req
 	backendReq.Stream = false
+	if req.Stream {
+		options := provider.StreamOptions{IncludeUsage: true}
+		if backendReq.StreamOptions != nil {
+			options = *backendReq.StreamOptions
+			options.IncludeUsage = true
+		}
+		backendReq.StreamOptions = &options
+	}
 	cacheProvider := firstNonEmpty(providerHint, "auto")
 	if configRef != "" {
 		cacheProvider = "config:" + configRef + "|" + cacheProvider
@@ -290,6 +307,13 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	cachedResp, cacheHit := h.cachedResponse(ctx, tenantCacheScope, cacheProvider, backendReq)
 	recordTraceSpan(ctx, "cache_lookup", cacheProvider, map[bool]string{true: "hit", false: "miss"}[cacheHit], stageStart, nil)
 	if cacheHit {
+		if err := limitState.cached(ctx, firstNonEmpty(cachedResp.Model, req.Model)); limitState.failure(err) {
+			return
+		}
+		meta := provider.ProviderMeta{Provider: "semantic-cache", Model: req.Model, Cached: true, Timestamp: time.Now().UTC()}
+		if err := limitState.complete(ctx, cachedResp.Usage, &meta, true); limitState.failure(err) {
+			return
+		}
 		disp := h.outputGuardrailDisposition(ctx, reqID, &cachedResp)
 		if disp.Denied {
 			h.logRequest(ctx, logContext{
@@ -303,7 +327,6 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		meta := provider.ProviderMeta{Provider: "semantic-cache", Model: req.Model, Cached: true, Timestamp: time.Now().UTC()}
 		span.SetAttributes(
 			attribute.String("sentinel.decision", "ALLOW"),
 			attribute.Bool("sentinel.cache_hit", true),
@@ -327,7 +350,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if req.Stream {
 		h.streamProviderResponse(w, ctx, streamContext{
 			ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, BackendRequest: backendReq,
-			Router: activeRouter, ProviderHint: providerHint, ShadowHint: shadowHint, APIKeyID: apiKeyID, CacheProvider: cacheProvider, CacheScope: tenantCacheScope,
+			Limits: limitState, Router: activeRouter, ProviderHint: providerHint, ShadowHint: shadowHint, APIKeyID: apiKeyID, CacheProvider: cacheProvider, CacheScope: tenantCacheScope,
 		})
 		return
 	}
@@ -340,6 +363,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		stageStart = time.Now()
 		resp, meta, err = activeRouter.Execute(ctx, backendReq, providerHint)
 		if err != nil {
+			if limitState.failure(err) {
+				return
+			}
+			limitState.release()
 			recordTraceSpan(ctx, "provider_call", meta.Provider, "error", stageStart, map[string]any{"error": err.Error()})
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "provider error")
@@ -358,6 +385,11 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		recordTraceSpan(ctx, "provider_call", meta.Provider, "ok", stageStart, nil)
+		if err := limitState.complete(ctx, resp.Usage, &meta, false); err != nil {
+			h.logRequest(ctx, logContext{ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Response: &resp, Meta: &meta, APIKeyID: apiKeyID, Status: "error", ErrorMessage: err.Error()})
+			limitState.failure(err)
+			return
+		}
 
 		// Output guardrails inspect every completion choice.
 		disp := h.outputGuardrailDisposition(ctx, reqID, &resp)
@@ -436,6 +468,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 }
 
 type streamContext struct {
+	Limits         *limitState
 	ID             string
 	TraceID        string
 	SessionID      string
@@ -515,12 +548,15 @@ func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
 		}
 		entry.LatencyMs = float64(logCtx.Meta.Latency.Microseconds()) / 1000
 		entry.Cost = logCtx.Meta.Cost
+		entry.CostSource = firstNonEmpty(logCtx.Meta.CostSource, "none")
 	}
 
 	if logCtx.Response != nil {
 		entry.InputTokens = logCtx.Response.Usage.PromptTokens
 		entry.OutputTokens = logCtx.Response.Usage.CompletionTokens
 		entry.TotalTokens = logCtx.Response.Usage.TotalTokens
+		entry.CachedTokens = logCtx.Response.Usage.CachedPromptTokens
+		entry.ReasoningTokens = logCtx.Response.Usage.ReasoningTokens
 		if h.logPayloads {
 			entry.ResponseBody = marshalLogBody(logCtx.Response)
 		}
@@ -590,6 +626,12 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 		var chunks <-chan provider.ChatResponseChunk
 		chunks, meta, err = activeRouter.ExecuteStream(ctx, streamCtx.BackendRequest, streamCtx.ProviderHint)
 		if err != nil {
+			if streamCtx.Limits != nil && streamCtx.Limits.failure(err) {
+				return
+			}
+			if streamCtx.Limits != nil {
+				streamCtx.Limits.release()
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "provider stream error")
 			span.SetAttributes(attribute.String("llm.response.provider", meta.Provider))
@@ -647,13 +689,31 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 			}
 			if chunk.Usage != nil {
 				aggregated.Usage = *chunk.Usage
-				meta.Cost = provider.EstimateCost(firstNonEmpty(meta.ProviderType, meta.Provider), aggregated.Model, aggregated.Usage)
+			}
+			// Always collect upstream usage internally, but honor the client's
+			// include_usage option when emitting OpenAI-compatible chunks.
+			if streamCtx.Request.StreamOptions == nil || !streamCtx.Request.StreamOptions.IncludeUsage {
+				if chunk.Usage != nil && len(chunk.Choices) == 0 {
+					continue
+				}
+				chunk.Usage = nil
 			}
 			if bufferOutput {
 				buffered = append(buffered, chunk)
 			} else {
 				writeSSE(w, chunk)
 				flusher.Flush()
+			}
+		}
+
+		if streamCtx.Limits != nil {
+			if err := streamCtx.Limits.complete(ctx, aggregated.Usage, &meta, false); err != nil {
+				log.Printf("stream rate limit reconciliation failed: %v", err)
+				if bufferOutput {
+					h.logRequest(ctx, logContext{ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Response: &aggregated, Meta: &meta, APIKeyID: streamCtx.APIKeyID, Status: "error", ErrorMessage: err.Error()})
+					streamCtx.Limits.failure(err)
+					return
+				}
 			}
 		}
 

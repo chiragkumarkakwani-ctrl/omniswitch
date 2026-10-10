@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/limits"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
@@ -51,13 +52,33 @@ func (h *Handler) Embeddings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	ctx := WithRequestID(r.Context(), requestID)
+	ctx = WithTraceID(ctx, traceID)
+	ctx = WithSessionID(ctx, sessionID)
+	limitCtx, limitState, err := h.startLimits(ctx, w, r, request.Model, limits.EstimateEmbedding(request))
+	if limitState.failure(err) {
+		return
+	}
+	r = r.WithContext(limitCtx)
+	defer limitState.release()
 	response, meta, err := h.router.Embeddings(r.Context(), request, r.Header.Get("x-omniswitch-provider"))
 	if err != nil {
+		if limitState.failure(err) {
+			return
+		}
+		limitState.release()
 		h.logRequest(r.Context(), logContext{ID: requestID, TraceID: traceID, SessionID: sessionID, Request: logRequest, Meta: &meta, APIKeyID: keyID, Status: "error", ErrorMessage: err.Error()})
 		w.Header().Set("x-omniswitch-trace-id", traceID)
 		writeError(w, http.StatusBadGateway, "embedding provider error: "+err.Error())
 		return
 	}
+	if err := limitState.complete(r.Context(), response.Usage, &meta, false); err != nil {
+		logResponse := provider.ChatResponse{Usage: response.Usage}
+		h.logRequest(r.Context(), logContext{ID: requestID, TraceID: traceID, SessionID: sessionID, Request: logRequest, Response: &logResponse, Meta: &meta, APIKeyID: keyID, Status: "error", ErrorMessage: err.Error()})
+		limitState.failure(err)
+		return
+	}
+
 	logResponse := provider.ChatResponse{ID: requestID, Object: "embedding", Created: time.Now().Unix(), Model: response.Model, Usage: response.Usage}
 	h.logRequest(r.Context(), logContext{ID: requestID, TraceID: traceID, SessionID: sessionID, Request: logRequest, Response: &logResponse, Meta: &meta, APIKeyID: keyID, Status: "success"})
 	w.Header().Set("x-omniswitch-trace-id", traceID)
