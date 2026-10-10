@@ -6,6 +6,7 @@ import { stackedBar } from "../lib/charts.js";
 import {
   page,
   panel,
+  code,
   metric,
   pill,
   link,
@@ -55,8 +56,9 @@ function replay(ctx) {
         errors.replaceChildren();
         results.replaceChildren();
         try {
+          const maximumBytes = 1024 * 1024;
           const file = upload.files[0];
-          if (file.size > 2 * 1024 * 1024) throw new Error("Use a file smaller than 2 MB.");
+          if (file.size > maximumBytes) throw new Error("Use a file no larger than 1 MiB.");
           const text = await file.text();
           const records = text.trim().startsWith("[")
             ? JSON.parse(text)
@@ -74,17 +76,20 @@ function replay(ctx) {
             throw new Error(
               "Upload 1–200 ToolRequests with agent, tool, action, resource, and session.",
             );
-          const current = await post(
-            "/api/evals/policy",
-            { policies: [{ name: name.value, body: candidate.value }], requests: records },
-            { signal: ctx.signal },
-          );
-          const previous = baseline.value.trim()
-            ? await post(
-                "/api/evals/policy",
-                { policies: [{ name: name.value, body: baseline.value }], requests: records },
-                { signal: ctx.signal },
-              )
+          const bodyFor = (policy) => ({
+            policies: [{ name: name.value, body: policy }],
+            requests: records,
+          });
+          const candidateBody = bodyFor(candidate.value);
+          const baselineBody = baseline.value.trim() ? bodyFor(baseline.value) : null;
+          const oversized = [candidateBody, baselineBody]
+            .filter(Boolean)
+            .some((body) => new TextEncoder().encode(JSON.stringify(body)).length > maximumBytes);
+          if (oversized)
+            throw new Error("Each replay request, including policy and contexts, must fit in 1 MiB.");
+          const current = await post("/api/evals/policy", candidateBody, { signal: ctx.signal });
+          const previous = baselineBody
+            ? await post("/api/evals/policy", baselineBody, { signal: ctx.signal })
             : null;
           if (ctx.signal.aborted) return;
           const rows = current.results.map((r, i) => ({
@@ -139,6 +144,14 @@ function replay(ctx) {
                       {},
                       r.decision?.rule,
                       h("div", { class: "muted wrap" }, r.error || r.decision?.reason),
+                      r.decision?.trace?.length
+                        ? h(
+                            "details",
+                            { class: "inline-details" },
+                            h("summary", {}, "Rule trace"),
+                            code(JSON.stringify(r.decision.trace, null, 2)),
+                          )
+                        : null,
                     ),
                 },
                 {
@@ -180,7 +193,7 @@ function replay(ctx) {
         field(
           "Recorded tool contexts",
           upload,
-          "Up to 200 records, 2 MB. Supply policy bodies, not server paths.",
+          "Up to 200 records. File and each request must fit in 1 MiB, including policy bodies.",
         ),
       ),
     ),
