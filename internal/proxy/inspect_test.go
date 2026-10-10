@@ -25,21 +25,23 @@ func (e inspectionEngine) Evaluate(ctx context.Context, request model.ToolReques
 
 func TestMCPInspectionUsesPoliciesWithoutCallsOrAudits(t *testing.T) {
 	engine, err := policy.NewEngine(
-		policy.Rule{Name: "hide-delete", Expression: `tool.name == "sql_delete" && action.name == "list" && agent.role != "admin"`, Reason: "Hidden delete"},
+		policy.Rule{Name: "hide-delete", Expression: `tool.name == "sql.delete_table" && action.name == "list" && agent.role != "admin"`, Reason: "Hidden delete"},
 		policy.Rule{Name: "legacy-delete", Expression: `tool.name == "sql" && action.name == "delete"`, Reason: "Legacy delete policy"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request struct{ Method string `json:"method"` }
+		var request struct {
+			Method string `json:"method"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Method != "tools/list" {
 			t.Errorf("inspection made a tool call: %s/%v", request.Method, err)
 		}
 		if r.Header.Get("Mcp-Session-Id") != "verified-session" {
 			t.Error("discovery dropped MCP session")
 		}
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"weather"},{"name":"sql_delete"}]}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"weather"},{"name":"sql.delete_table"}]}}`))
 	}))
 	defer server.Close()
 	var events bytes.Buffer
@@ -55,7 +57,7 @@ func TestMCPInspectionUsesPoliciesWithoutCallsOrAudits(t *testing.T) {
 		t.Fatalf("visible tools = %+v/%v", tools, err)
 	}
 	tools, err = h.InspectTools(context.Background(), headers, agent, "OPS", true)
-	if err != nil || len(tools) != 2 || tools[1].List.Allowed || tools[1].List.Rule != "hide-delete" || tools[1].Call.Allowed || tools[1].Call.Rule != "legacy-delete" || tools[1].NamespacedName != "ops__sql_delete" {
+	if err != nil || len(tools) != 2 || tools[1].List.Allowed || tools[1].List.Rule != "hide-delete" || tools[1].Call.Allowed || tools[1].Call.Rule != "legacy-delete" || tools[1].NamespacedName != "ops__sql.delete_table" {
 		t.Fatalf("admin explanations = %+v/%v", tools, err)
 	}
 	targets := h.InspectTargets(context.Background(), headers, agent)
