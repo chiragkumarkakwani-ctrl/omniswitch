@@ -691,14 +691,14 @@ h1:focus {
   min-width: 180px;
   max-width: 340px;
 }
-.filters details {
-  position: relative;
+.filters details[open] {
+  flex-basis: 100%;
 }
 .filter-details {
-  position: absolute;
-  right: 0;
-  top: 46px;
+  position: relative;
   width: 300px;
+  max-width: 100%;
+  margin-top: 10px;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 7px;
