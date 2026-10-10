@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/store"
@@ -32,6 +33,9 @@ type CreateKeyRequest struct {
 	MonthlyCostBudget  float64 `json:"monthly_cost_budget,omitempty"`
 	MonthlyTokenBudget int     `json:"monthly_token_budget,omitempty"`
 	ExpiresIn          string  `json:"expires_in,omitempty"`
+	RequestsPerMinute  int     `json:"requests_per_minute"`
+	TokensPerMinute    int     `json:"tokens_per_minute"`
+	USDPerDay          float64 `json:"usd_per_day"`
 }
 
 // CreateKeyResponse includes the full API key (shown only once).
@@ -42,17 +46,36 @@ type CreateKeyResponse struct {
 
 // CreateAPIKey handles POST /api/keys.
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	var req CreateKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if !requireKeyAdmin(w, r) {
+		return
+	}
+	req := CreateKeyRequest{RateLimit: 60}
+	if err := decodeKeyRequest(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Role == "" {
+		req.Role = "viewer"
+	}
+	validation := store.APIKeyUpdate{
+		Name: &req.Name, WorkspaceID: &req.WorkspaceID, Role: &req.Role, RateLimit: &req.RateLimit,
+		BudgetUSD: &req.BudgetUSD, MonthlyCostBudget: &req.MonthlyCostBudget, MonthlyTokenBudget: &req.MonthlyTokenBudget,
+		RequestsPerMinute: &req.RequestsPerMinute, TokensPerMinute: &req.TokensPerMinute, USDPerDay: &req.USDPerDay,
+	}
+	if err := validation.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.RateLimit <= 0 {
-		req.RateLimit = 60
+	var expiresAt *time.Time
+	if req.ExpiresIn != "" {
+		duration, err := time.ParseDuration(req.ExpiresIn)
+		if err != nil || duration <= 0 {
+			writeError(w, http.StatusBadRequest, "expires_in must be a positive duration")
+			return
+		}
+		at := time.Now().UTC().Add(duration)
+		expiresAt = &at
 	}
 
 	rawKey, err := generateKey()
@@ -74,15 +97,9 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		BudgetUSD:          firstPositive(req.BudgetUSD, req.MonthlyCostBudget),
 		MonthlyCostBudget:  req.MonthlyCostBudget,
 		MonthlyTokenBudget: req.MonthlyTokenBudget,
-		Enabled:            true,
-	}
-
-	if req.ExpiresIn != "" {
-		dur, err := time.ParseDuration(req.ExpiresIn)
-		if err == nil {
-			t := time.Now().Add(dur)
-			key.ExpiresAt = &t
-		}
+		RequestsPerMinute:  req.RequestsPerMinute, TokensPerMinute: req.TokensPerMinute, USDPerDay: req.USDPerDay,
+		ExpiresAt: expiresAt,
+		Enabled:   true,
 	}
 
 	if err := h.store.InsertAPIKey(r.Context(), key); err != nil {
@@ -90,24 +107,14 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, CreateKeyResponse{Key: rawKey, APIKey: key})
-}
-
-// ListAPIKeys handles GET /api/keys.
-func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	keys, err := h.store.ListAPIKeys(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if keys == nil {
-		keys = []store.APIKey{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"keys": keys})
+	writeJSON(w, http.StatusCreated, map[string]any{"key": rawKey, "api_key": keyResponse(key)})
 }
 
 // DeleteAPIKey handles DELETE /api/keys/{id}.
 func (h *Handler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
+	if !requireKeyAdmin(w, r) {
+		return
+	}
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "id is required")
@@ -143,7 +150,15 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]any{"error": map[string]string{"message": msg}})
+	kind, code := "invalid_request_error", "invalid_request"
+	if status >= 500 {
+		kind, code = "server_error", "server_error"
+	} else if status == http.StatusForbidden {
+		kind, code = "permission_error", "insufficient_role"
+	} else if status == http.StatusNotFound {
+		code = "not_found"
+	}
+	writeJSON(w, status, map[string]any{"error": map[string]string{"message": msg, "type": kind, "code": code}})
 }
 
 func firstPositive(values ...float64) float64 {

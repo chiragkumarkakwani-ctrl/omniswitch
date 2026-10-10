@@ -33,7 +33,10 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 		modelCount = len(registry.AllModels())
 	}
 	return map[string]any{
-		"config_path": settings.configPath,
+		"version":      version,
+		"commit":       commit,
+		"auth_enabled": settings.authEnabled,
+		"config_path":  settings.configPath,
 		"gateway": map[string]any{
 			"listen":                   settings.listenAddr,
 			"auth_enabled":             settings.authEnabled,
@@ -94,8 +97,9 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 		},
 		"routes": routeSummaries(settings.routes),
 		"mcp": map[string]any{
-			"enabled": settings.mcpEnabled,
-			"targets": mcpTargetSummaries(settings),
+			"enabled":     settings.mcpEnabled,
+			"policy_path": settings.mcpPolicyPath,
+			"targets":     mcpTargetSummaries(settings),
 		},
 		"a2a": map[string]any{
 			"enabled":            true,
@@ -218,6 +222,7 @@ func mcpTargetSummaries(settings runtimeSettings) []map[string]any {
 			"transport":              "http",
 			"enabled":                settings.mcpEnabled,
 			"policy_configured":      strings.TrimSpace(settings.mcpPolicyPath) != "",
+			"policy_path":            settings.mcpPolicyPath,
 			"headers_configured":     false,
 			"environment_configured": false,
 			"forward_bearer_token":   false,
@@ -242,6 +247,7 @@ func mcpTargetSummaries(settings runtimeSettings) []map[string]any {
 			"transport":              transport,
 			"enabled":                enabled,
 			"policy_configured":      strings.TrimSpace(target.Policy) != "",
+			"policy_path":            firstNonEmpty(target.Policy, settings.mcpPolicyPath),
 			"headers_configured":     len(target.Headers) > 0,
 			"environment_configured": len(target.Environment) > 0,
 			"forward_bearer_token":   forwardBearer,

@@ -21,6 +21,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/prompt"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	mcpproxy "github.com/omniswitch-dev/omniswitch/internal/proxy"
+	"github.com/omniswitch-dev/omniswitch/internal/router"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 	"github.com/omniswitch-dev/omniswitch/internal/vault"
 )
@@ -30,6 +31,7 @@ import (
 type routeHandlers struct {
 	settings runtimeSettings
 	registry *provider.Registry
+	router   *router.Router
 	store    *store.Store
 	gateway  *gateway.Handler
 	admin    *admin.Handler
@@ -59,6 +61,7 @@ func newGatewayMux(h routeHandlers) *http.ServeMux {
 	registerEvalRoutes(mux, h.eval)
 
 	// Dashboard API + static files.
+	configureConsoleAPI(h)
 	h.dash.RegisterRoutes(mux)
 	if h.settings.prometheusEnabled {
 		h.dash.RegisterPrometheus(mux)
@@ -92,7 +95,7 @@ func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *
 	})
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeConsoleMethodError(w)
 			return
 		}
 		storage, err := runtimeStorageSummary(r.Context(), st)
@@ -102,6 +105,7 @@ func registerInfoRoutes(mux *http.ServeMux, settings runtimeSettings, registry *
 		}
 		summary := runtimeConfigSummary(settings, registry)
 		summary["storage"] = storage
+		redactConfigSummary(summary, gateway.IsAdmin(r))
 		writeJSON(w, http.StatusOK, summary)
 	})
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -122,10 +126,12 @@ func registerAdminRoutes(mux *http.ServeMux, adminHandler *admin.Handler, vaultH
 			adminHandler.ListAPIKeys(w, r)
 		case http.MethodPost:
 			adminHandler.CreateAPIKey(w, r)
+		case http.MethodPatch:
+			adminHandler.UpdateAPIKey(w, r)
 		case http.MethodDelete:
 			adminHandler.DeleteAPIKey(w, r)
 		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeConsoleMethodError(w)
 		}
 	})
 	mux.HandleFunc("/api/virtual-keys", func(w http.ResponseWriter, r *http.Request) {
@@ -371,4 +377,8 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func writeConsoleMethodError(w http.ResponseWriter) {
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"message": "method not allowed", "type": "invalid_request_error", "code": "method_not_allowed"}})
 }
