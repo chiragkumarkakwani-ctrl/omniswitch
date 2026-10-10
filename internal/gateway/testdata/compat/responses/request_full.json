@@ -1,0 +1,163 @@
+{
+  "description": "request full",
+  "source": "https://platform.openai.com/docs/api-reference/responses/create",
+  "verified_on": "2026-10-09",
+  "kind": "request",
+  "request": {
+    "model": "test-model",
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Describe this image"
+          },
+          {
+            "type": "input_image",
+            "image_url": "https://example.com/image.png",
+            "detail": "low"
+          }
+        ]
+      }
+    ],
+    "instructions": "Use tools.",
+    "tools": [
+      {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    ],
+    "tool_choice": {
+      "type": "function",
+      "name": "get_weather"
+    },
+    "parallel_tool_calls": false,
+    "max_output_tokens": 64,
+    "temperature": 0.2,
+    "top_p": 0.8,
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "answer",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": true
+      }
+    },
+    "reasoning": {
+      "effort": "high"
+    },
+    "metadata": {
+      "client": "agent"
+    },
+    "user": "user-123",
+    "stream": true,
+    "store": true,
+    "top_logprobs": 3
+  },
+  "expected_chat": {
+    "model": "test-model",
+    "messages": [
+      {
+        "role": "system",
+        "content": "Use tools."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe this image"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/image.png",
+              "detail": "low"
+            }
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        }
+      }
+    ],
+    "tool_choice": {
+      "type": "function",
+      "function": {
+        "name": "get_weather"
+      }
+    },
+    "parallel_tool_calls": false,
+    "max_completion_tokens": 64,
+    "temperature": 0.2,
+    "top_p": 0.8,
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "answer",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "answer": {
+              "type": "string"
+            }
+          }
+        },
+        "strict": true
+      }
+    },
+    "reasoning_effort": "high",
+    "metadata": {
+      "client": "agent"
+    },
+    "user": "user-123",
+    "stream": true,
+    "store": false,
+    "stream_options": {
+      "include_usage": true
+    },
+    "top_logprobs": 3
+  }
+}

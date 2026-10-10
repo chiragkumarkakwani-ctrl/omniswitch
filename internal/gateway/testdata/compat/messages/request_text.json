@@ -1,0 +1,37 @@
+{
+  "description": "request text",
+  "source": "https://platform.claude.com/docs/en/api/messages",
+  "verified_on": "2026-10-09",
+  "kind": "request",
+  "request": {
+    "model": "test-model",
+    "max_tokens": 32,
+    "system": "Be concise.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hi"
+      }
+    ],
+    "tool_choice": {
+      "type": "any",
+      "disable_parallel_tool_use": false
+    }
+  },
+  "expected_chat": {
+    "model": "test-model",
+    "max_tokens": 32,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Be concise."
+      },
+      {
+        "role": "user",
+        "content": "Hi"
+      }
+    ],
+    "tool_choice": "required",
+    "parallel_tool_calls": true
+  }
+}

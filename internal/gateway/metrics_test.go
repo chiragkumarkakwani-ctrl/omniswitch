@@ -20,6 +20,9 @@ import (
 
 const metricsChatBody = `{"model":"test-model","messages":[{"role":"user","content":"hello"}]}`
 
+// Anthropic Messages requires a positive max_tokens.
+const metricsMessagesBody = `{"model":"test-model","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`
+
 func assertMetricSamples(t *testing.T, metrics *telemetry.Metrics, expected ...string) {
 	t.Helper()
 	var text strings.Builder
@@ -52,7 +55,7 @@ func TestPrometheusScrape(t *testing.T) {
 	}{
 		{path: "/v1/chat/completions", body: metricsChatBody, fn: h.ChatCompletions},
 		{path: "/v1/responses", body: `{"model":"test-model","input":"hello"}`, fn: h.Responses},
-		{path: "/v1/messages", body: metricsChatBody, fn: h.Messages},
+		{path: "/v1/messages", body: metricsMessagesBody, fn: h.Messages},
 		{path: "/v1/embeddings", body: `{"model":"embedding-model","input":"hello"}`, fn: h.Embeddings},
 		{path: "/v1/moderations", body: `{"input":"hello"}`, fn: h.Moderations},
 		{path: "/v1/rerank", body: `{"model":"rerank-model","query":"hello","documents":["world"]}`, fn: h.Rerank},

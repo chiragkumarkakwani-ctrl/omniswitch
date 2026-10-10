@@ -1,0 +1,180 @@
+{
+  "description": "stream text",
+  "source": "https://platform.claude.com/docs/en/api/messages",
+  "verified_on": "2026-10-09",
+  "kind": "stream",
+  "request": {
+    "model": "test-model",
+    "max_tokens": 64,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hi"
+      }
+    ]
+  },
+  "chunks": [
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant"
+          },
+          "finish_reason": null
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 3,
+        "completion_tokens": 0,
+        "total_tokens": 3
+      }
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "Hello "
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "world"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {},
+          "finish_reason": "length"
+        }
+      ]
+    },
+    {
+      "id": "chat_demo",
+      "object": "chat.completion.chunk",
+      "created": 1,
+      "model": "test-model",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 3,
+        "completion_tokens": 2,
+        "total_tokens": 5
+      }
+    },
+    "[DONE]"
+  ],
+  "expected_events": [
+    {
+      "event": "message_start",
+      "data": {
+        "type": "message_start",
+        "message": {
+          "id": "msg_demo",
+          "type": "message",
+          "role": "assistant",
+          "model": "test-model",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 3,
+            "output_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "event": "content_block_start",
+      "data": {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      }
+    },
+    {
+      "event": "content_block_delta",
+      "data": {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello "
+        }
+      }
+    },
+    {
+      "event": "content_block_delta",
+      "data": {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "world"
+        }
+      }
+    },
+    {
+      "event": "content_block_stop",
+      "data": {
+        "type": "content_block_stop",
+        "index": 0
+      }
+    },
+    {
+      "event": "message_delta",
+      "data": {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "max_tokens",
+          "stop_sequence": null
+        },
+        "usage": {
+          "input_tokens": 3,
+          "output_tokens": 2,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        }
+      }
+    },
+    {
+      "event": "message_stop",
+      "data": {
+        "type": "message_stop"
+      }
+    }
+  ],
+  "source_streaming": "https://platform.claude.com/docs/en/build-with-claude/streaming"
+}

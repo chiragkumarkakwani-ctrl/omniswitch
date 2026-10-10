@@ -242,7 +242,7 @@ func TestResponsesAndMessagesCompatibility(t *testing.T) {
 		want string
 	}{
 		{name: "responses", path: "/v1/responses", body: `{"model":"test-model","input":"hello"}`, want: `"object":"response"`},
-		{name: "messages", path: "/v1/messages", body: `{"model":"test-model","messages":[{"role":"user","content":"hello"}]}`, want: `"type":"message"`},
+		{name: "messages", path: "/v1/messages", body: `{"model":"test-model","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`, want: `"type":"message"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
