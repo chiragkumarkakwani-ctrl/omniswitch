@@ -84,11 +84,8 @@ type anthropicResponse struct {
 		Name  string          `json:"name,omitempty"`
 		Input json.RawMessage `json:"input,omitempty"`
 	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
+	StopReason string         `json:"stop_reason"`
+	Usage      anthropicUsage `json:"usage"`
 }
 
 func (a *Anthropic) ChatCompletion(ctx context.Context, req ChatRequest) (ChatResponse, ProviderMeta, error) {
@@ -182,14 +179,10 @@ func (a *Anthropic) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRe
 				FinishReason: finishReason,
 			},
 		},
-		Usage: Usage{
-			PromptTokens:     anthResp.Usage.InputTokens,
-			CompletionTokens: anthResp.Usage.OutputTokens,
-			TotalTokens:      anthResp.Usage.InputTokens + anthResp.Usage.OutputTokens,
-		},
+		Usage: anthResp.Usage.normalized(),
 	}
 
-	meta.Cost = pricingFor("anthropic", req.Model).Cost(anthResp.Usage.InputTokens, anthResp.Usage.OutputTokens)
+	RepriceUsage(&meta, req.Model, chatResp.Usage)
 	return chatResp, meta, nil
 }
 

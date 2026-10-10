@@ -304,6 +304,12 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	// Cached and cache-write tokens are subsets of PromptTokens. Reasoning
+	// tokens are a subset of CompletionTokens, never an extra billed output.
+	Known              bool `json:"-"`
+	CachedPromptTokens int  `json:"-"`
+	CacheWriteTokens   int  `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens    int  `json:"-"`
 }
 
 // ModelInfo describes a model exposed through the gateway.
@@ -322,6 +328,7 @@ type ProviderMeta struct {
 	Model        string        `json:"model"`
 	Latency      time.Duration `json:"latency"`
 	Cost         float64       `json:"cost"`
+	CostSource   string        `json:"cost_source,omitempty"`
 	Cached       bool          `json:"cached"`
 	Retries      int           `json:"retries"`
 	Fallback     bool          `json:"fallback"`
@@ -489,12 +496,30 @@ func NewUnsupportedParameterError(providerName, param string) *UnsupportedParame
 
 // ModelPricing holds cost per token for a specific model.
 type ModelPricing struct {
-	InputPerMillion  float64
-	OutputPerMillion float64
+	InputPerMillion       float64
+	OutputPerMillion      float64
+	CachedInputPerMillion *float64
+	CacheWritePerMillion  *float64
 }
 
 // Cost calculates the total cost for the given token counts.
 func (p ModelPricing) Cost(inputTokens, outputTokens int) float64 {
 	return (float64(inputTokens) * p.InputPerMillion / 1_000_000) +
 		(float64(outputTokens) * p.OutputPerMillion / 1_000_000)
+}
+
+// CostUsage applies cached-input and cache-write prices without double billing
+// their contribution to the normalized prompt token total.
+func (p ModelPricing) CostUsage(usage Usage) float64 {
+	input := max(0, usage.PromptTokens)
+	cached := min(input, max(0, usage.CachedPromptTokens))
+	written := min(input-cached, max(0, usage.CacheWriteTokens))
+	cachedPrice, writePrice := p.InputPerMillion, p.InputPerMillion
+	if p.CachedInputPerMillion != nil {
+		cachedPrice = *p.CachedInputPerMillion
+	}
+	if p.CacheWritePerMillion != nil {
+		writePrice = *p.CacheWritePerMillion
+	}
+	return (float64(input-cached-written)*p.InputPerMillion + float64(cached)*cachedPrice + float64(written)*writePrice + float64(max(0, usage.CompletionTokens))*p.OutputPerMillion) / 1_000_000
 }

@@ -93,7 +93,7 @@ func (a *AzureOpenAI) ChatCompletion(ctx context.Context, req ChatRequest) (Chat
 	if chatResp.Model == "" {
 		chatResp.Model = req.Model
 	}
-	meta.Cost = pricingFor("openai", req.Model).Cost(chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens)
+	RepriceUsage(&meta, req.Model, chatResp.Usage)
 	return chatResp, meta, nil
 }
 

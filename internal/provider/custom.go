@@ -15,16 +15,22 @@ import (
 // This covers Ollama, vLLM, LiteLLM, Together AI, Fireworks, DeepSeek, Perplexity,
 // Azure OpenAI, AWS Bedrock (via proxy), and any other OpenAI-compatible server.
 type Custom struct {
-	name         string
-	baseURL      string
-	apiKey       string
-	client       *http.Client
-	models       []string
-	extraHeaders map[string]string
+	name            string
+	pricingProvider string
+	baseURL         string
+	apiKey          string
+	client          *http.Client
+	models          []string
+	extraHeaders    map[string]string
 }
 
 // CustomOption configures a Custom provider.
 type CustomOption func(*Custom)
+
+// WithCustomType preserves canonical preset pricing for aliased accounts.
+func WithCustomType(providerType string) CustomOption {
+	return func(c *Custom) { c.pricingProvider = strings.ToLower(strings.TrimSpace(providerType)) }
+}
 
 // WithCustomModels sets the advertised model list for the provider.
 func WithCustomModels(models []string) CustomOption {
@@ -66,7 +72,17 @@ func NewCustom(name, baseURL, apiKey string, opts ...CustomOption) *Custom {
 
 func (c *Custom) Name() string { return c.name }
 
+func (c *Custom) pricingType() string {
+	if c.pricingProvider != "" && c.pricingProvider != "custom" {
+		return c.pricingProvider
+	}
+	return c.name
+}
+
 func (c *Custom) Models() []ModelInfo {
+	if len(c.models) == 0 {
+		return catalogModelInfos(c.pricingType(), c.name)
+	}
 	out := make([]ModelInfo, len(c.models))
 	for i, m := range c.models {
 		out[i] = ModelInfo{
@@ -81,7 +97,7 @@ func (c *Custom) Models() []ModelInfo {
 
 func (c *Custom) ChatCompletion(ctx context.Context, req ChatRequest) (ChatResponse, ProviderMeta, error) {
 	start := time.Now()
-	meta := ProviderMeta{Provider: c.name, ProviderType: "custom", Model: req.Model, Timestamp: start}
+	meta := ProviderMeta{Provider: c.name, ProviderType: c.pricingType(), Model: req.Model, Timestamp: start}
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -132,7 +148,7 @@ func (c *Custom) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRespo
 	}
 
 	// Try provider-specific pricing first, fall back to generic estimate.
-	meta.Cost = EstimateCost(c.name, req.Model, chatResp.Usage)
+	RepriceUsage(&meta, req.Model, chatResp.Usage)
 	return chatResp, meta, nil
 }
 
@@ -142,7 +158,7 @@ func (c *Custom) ChatCompletionStream(ctx context.Context, req ChatRequest) (<-c
 
 func (c *Custom) Embeddings(ctx context.Context, req EmbeddingRequest) (EmbeddingResponse, ProviderMeta, error) {
 	start := time.Now()
-	meta := ProviderMeta{Provider: c.name, ProviderType: "custom", Model: req.Model, Timestamp: start}
+	meta := ProviderMeta{Provider: c.name, ProviderType: c.pricingType(), Model: req.Model, Timestamp: start}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return EmbeddingResponse{}, meta, fmt.Errorf("marshal embeddings request: %w", err)
@@ -178,13 +194,13 @@ func (c *Custom) Embeddings(ctx context.Context, req EmbeddingRequest) (Embeddin
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return EmbeddingResponse{}, meta, fmt.Errorf("decode embeddings response: %w", err)
 	}
-	meta.Cost = EstimateCost(c.name, req.Model, response.Usage)
+	RepriceUsage(&meta, req.Model, response.Usage)
 	return response, meta, nil
 }
 
 func (c *Custom) Rerank(ctx context.Context, req RerankRequest) (RerankResponse, ProviderMeta, error) {
 	start := time.Now()
-	meta := ProviderMeta{Provider: c.name, ProviderType: "custom", Model: req.Model, Timestamp: start}
+	meta := ProviderMeta{Provider: c.name, ProviderType: c.pricingType(), Model: req.Model, Timestamp: start}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return RerankResponse{}, meta, fmt.Errorf("marshal rerank request: %w", err)
@@ -223,7 +239,7 @@ func (c *Custom) Rerank(ctx context.Context, req RerankRequest) (RerankResponse,
 	if response.Model == "" {
 		response.Model = req.Model
 	}
-	meta.Cost = EstimateCost(c.name, req.Model, response.Usage)
+	RepriceUsage(&meta, req.Model, response.Usage)
 	return response, meta, nil
 }
 

@@ -158,13 +158,9 @@ type bedrockConverseResponse struct {
 	Output struct {
 		Message bedrockMessage `json:"message"`
 	} `json:"output"`
-	StopReason string `json:"stopReason"`
-	Usage      struct {
-		InputTokens  int `json:"inputTokens"`
-		OutputTokens int `json:"outputTokens"`
-		TotalTokens  int `json:"totalTokens"`
-	} `json:"usage"`
-	Metrics struct {
+	StopReason string       `json:"stopReason"`
+	Usage      bedrockUsage `json:"usage"`
+	Metrics    struct {
 		LatencyMs int `json:"latencyMs"`
 	} `json:"metrics"`
 }
@@ -221,12 +217,8 @@ func (b *Bedrock) ChatCompletion(ctx context.Context, req ChatRequest) (ChatResp
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
 	}
-	total := bedrockResp.Usage.TotalTokens
-	if total == 0 {
-		total = bedrockResp.Usage.InputTokens + bedrockResp.Usage.OutputTokens
-	}
-	usage := Usage{PromptTokens: bedrockResp.Usage.InputTokens, CompletionTokens: bedrockResp.Usage.OutputTokens, TotalTokens: total}
-	meta.Cost = bedrockPricing(req.Model).Cost(usage.PromptTokens, usage.CompletionTokens)
+	usage := bedrockResp.Usage.normalized()
+	RepriceUsage(&meta, req.Model, usage)
 	return ChatResponse{
 		ID:      fmt.Sprintf("bedrock-%d", time.Now().UnixNano()),
 		Object:  "chat.completion",

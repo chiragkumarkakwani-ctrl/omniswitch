@@ -42,14 +42,14 @@ type openAICompatiblePreset struct {
 }
 
 var openAICompatiblePresets = []openAICompatiblePreset{
-	{"mistral", "MISTRAL_API_KEY", "https://api.mistral.ai/v1", []string{"mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "codestral-latest", "open-mistral-nemo"}},
-	{"xai", "XAI_API_KEY", "https://api.x.ai/v1", []string{"grok-4", "grok-4-fast", "grok-3", "grok-3-mini"}},
-	{"deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", []string{"deepseek-chat", "deepseek-reasoner"}},
-	{"together", "TOGETHER_API_KEY", "https://api.together.xyz/v1", []string{"meta-llama/Llama-3.3-70B-Instruct-Turbo", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "Qwen/Qwen2.5-72B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3"}},
-	{"fireworks", "FIREWORKS_API_KEY", "https://api.fireworks.ai/inference/v1", []string{"accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/deepseek-v3"}},
-	{"perplexity", "PERPLEXITY_API_KEY", "https://api.perplexity.ai", []string{"sonar", "sonar-pro", "sonar-reasoning-pro"}},
-	{"cerebras", "CEREBRAS_API_KEY", "https://api.cerebras.ai/v1", []string{"llama-3.3-70b", "llama3.1-8b"}},
-	{"openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1", nil}, // dynamic catalog; route by full model id
+	{"mistral", "MISTRAL_API_KEY", "https://api.mistral.ai/v1", nil},
+	{"xai", "XAI_API_KEY", "https://api.x.ai/v1", nil},
+	{"deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", nil},
+	{"together", "TOGETHER_API_KEY", "https://api.together.xyz/v1", nil},
+	{"fireworks", "FIREWORKS_API_KEY", "https://api.fireworks.ai/inference/v1", nil},
+	{"perplexity", "PERPLEXITY_API_KEY", "https://api.perplexity.ai", nil},
+	{"cerebras", "CEREBRAS_API_KEY", "https://api.cerebras.ai/v1", nil},
+	{"openrouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1", nil}, // curated subset; route any supported full model ID
 }
 
 // registerOpenAICompatiblePresets lights up hosted providers whose credentials
@@ -61,7 +61,7 @@ func registerOpenAICompatiblePresets(registry *provider.Registry) {
 		if apiKey == "" {
 			continue
 		}
-		var opts []provider.CustomOption
+		opts := []provider.CustomOption{provider.WithCustomType(preset.Type)}
 		if len(preset.Models) > 0 {
 			opts = append(opts, provider.WithCustomModels(preset.Models))
 		}
@@ -163,7 +163,7 @@ func registerProviderAccount(registry *provider.Registry, account gatewayconfig.
 		if envKey != "" {
 			apiKey = os.Getenv(envKey)
 		}
-		var opts []provider.CustomOption
+		opts := []provider.CustomOption{provider.WithCustomType(providerType)}
 		models := account.Models
 		baseURL := account.BaseURL
 		if preset := presetForType(providerType); preset != nil {

@@ -171,11 +171,9 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 				Type    string `json:"type"`
 				Index   int    `json:"index"`
 				Message struct {
-					ID    string `json:"id"`
-					Model string `json:"model"`
-					Usage struct {
-						InputTokens int `json:"input_tokens"`
-					} `json:"usage"`
+					ID    string         `json:"id"`
+					Model string         `json:"model"`
+					Usage anthropicUsage `json:"usage"`
 				} `json:"message"`
 				ContentBlock struct {
 					Type  string          `json:"type"`
@@ -189,9 +187,7 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 					PartialJSON string `json:"partial_json"`
 					StopReason  string `json:"stop_reason"`
 				} `json:"delta"`
-				Usage struct {
-					OutputTokens int `json:"output_tokens"`
-				} `json:"usage"`
+				Usage anthropicUsage `json:"usage"`
 			}
 			if err := json.Unmarshal([]byte(data), &event); err != nil {
 				continue
@@ -204,7 +200,7 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 				if event.Message.Model != "" {
 					model = event.Message.Model
 				}
-				usage.PromptTokens = event.Message.Usage.InputTokens
+				usage = event.Message.Usage.normalized()
 			case "content_block_start":
 				if event.ContentBlock.Type == "tool_use" {
 					index := event.Index
@@ -252,6 +248,7 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 					}
 				}
 			case "message_delta":
+				usage.Known = usage.Known || event.Usage.Known
 				usage.CompletionTokens = event.Usage.OutputTokens
 				usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 				finish := mapAnthropicStopReason(event.Delta.StopReason)
@@ -261,13 +258,10 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 				if finish == "" {
 					finish = "stop"
 				}
+				finalUsage := usage
 				chunks <- ChatResponseChunk{
-					ID:      id,
-					Object:  "chat.completion.chunk",
-					Created: time.Now().Unix(),
-					Model:   model,
-					Choices: []ChunkChoice{{Index: 0, FinishReason: finish}},
-					Usage:   &usage,
+					ID: id, Object: "chat.completion.chunk", Created: time.Now().Unix(), Model: model,
+					Choices: []ChunkChoice{{Index: 0, FinishReason: finish}}, Usage: &finalUsage,
 				}
 			case "message_stop":
 				if includeUsage {
@@ -347,11 +341,7 @@ func streamGemini(ctx context.Context, body io.ReadCloser, model string, include
 					finishReason = "tool_calls"
 				}
 			}
-			usage := Usage{
-				PromptTokens:     response.UsageMetadata.PromptTokenCount,
-				CompletionTokens: response.UsageMetadata.CandidatesTokenCount,
-				TotalTokens:      response.UsageMetadata.TotalTokenCount,
-			}
+			usage := response.UsageMetadata.normalized()
 			chunk := ChatResponseChunk{
 				ID:      id,
 				Object:  "chat.completion.chunk",
@@ -359,7 +349,7 @@ func streamGemini(ctx context.Context, body io.ReadCloser, model string, include
 				Model:   model,
 				Choices: []ChunkChoice{{Index: 0, Delta: Message{Content: text, ToolCalls: toolCalls}, FinishReason: finishReason}},
 			}
-			if usage.TotalTokens > 0 {
+			if usage.Known {
 				chunk.Usage = &usage
 				lastUsage = &usage
 			}

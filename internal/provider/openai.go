@@ -80,7 +80,7 @@ func (o *OpenAI) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRespo
 		return ChatResponse{}, meta, fmt.Errorf("decode response: %w", err)
 	}
 
-	meta.Cost = pricingFor("openai", req.Model).Cost(chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens)
+	RepriceUsage(&meta, req.Model, chatResp.Usage)
 	return chatResp, meta, nil
 }
 
@@ -121,7 +121,7 @@ func (o *OpenAI) Embeddings(ctx context.Context, req EmbeddingRequest) (Embeddin
 	if err := json.Unmarshal(payload, &response); err != nil {
 		return EmbeddingResponse{}, meta, fmt.Errorf("decode embeddings response: %w", err)
 	}
-	meta.Cost = EstimateCost("openai", req.Model, response.Usage)
+	RepriceUsage(&meta, req.Model, response.Usage)
 	return response, meta, nil
 }
 

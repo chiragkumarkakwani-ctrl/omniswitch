@@ -47,7 +47,9 @@ func (p *AliasProvider) ChatCompletion(ctx context.Context, req ChatRequest) (Ch
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
 	resp, meta, err := p.inner.ChatCompletion(ctx, req)
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	if resp.Model != "" {
@@ -61,7 +63,9 @@ func (p *AliasProvider) ChatCompletionStream(ctx context.Context, req ChatReques
 	req.Model = p.stripModel(req.Model)
 	if streamer, ok := p.inner.(StreamProvider); ok {
 		chunks, meta, err := streamer.ChatCompletionStream(ctx, req)
-		meta.ProviderType = p.inner.Name()
+		if meta.ProviderType == "" {
+			meta.ProviderType = p.inner.Name()
+		}
 		meta.Provider = p.name
 		meta.Model = originalModel
 		return p.rewriteStreamModel(chunks, originalModel), meta, err
@@ -70,7 +74,9 @@ func (p *AliasProvider) ChatCompletionStream(ctx context.Context, req ChatReques
 	if err != nil {
 		return nil, meta, err
 	}
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	if resp.Model != "" {
@@ -87,7 +93,9 @@ func (p *AliasProvider) Embeddings(ctx context.Context, req EmbeddingRequest) (E
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
 	response, meta, err := provider.Embeddings(ctx, req)
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	if response.Model != "" {
@@ -104,7 +112,9 @@ func (p *AliasProvider) Rerank(ctx context.Context, req RerankRequest) (RerankRe
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
 	response, meta, err := provider.Rerank(ctx, req)
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	if response.Model != "" {
@@ -121,7 +131,9 @@ func (p *AliasProvider) ImageGeneration(ctx context.Context, req ImageRequest) (
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
 	response, meta, err := provider.ImageGeneration(ctx, req)
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	return response, meta, err
@@ -135,7 +147,9 @@ func (p *AliasProvider) Transcription(ctx context.Context, req TranscriptionRequ
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
 	response, meta, err := provider.Transcription(ctx, req)
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	return response, meta, err
@@ -149,7 +163,9 @@ func (p *AliasProvider) Speech(ctx context.Context, req SpeechRequest) (io.ReadC
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
 	body, contentType, meta, err := provider.Speech(ctx, req)
-	meta.ProviderType = p.inner.Name()
+	if meta.ProviderType == "" {
+		meta.ProviderType = p.inner.Name()
+	}
 	meta.Provider = p.name
 	meta.Model = originalModel
 	return body, contentType, meta, err

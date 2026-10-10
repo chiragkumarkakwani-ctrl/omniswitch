@@ -170,7 +170,7 @@ Supported provider types:
 
 ### OpenAI-compatible presets
 
-Setting an environment variable enables these providers instantly - no config entry required. Each preset ships a default endpoint and a curated model list; a config `providers` entry with the same `type` can override `base_url` or `models`.
+Setting an environment variable enables these providers without a config entry. Each preset ships a default endpoint and a curated model list from the pricing catalog, not the provider's complete model inventory. A config `providers` entry with the same `type` can override `base_url` or `models`; explicitly configured models without a price remain usable but are logged as unpriced.
 
 | Type | Environment variable | Default endpoint |
 | --- | --- | --- |
@@ -212,19 +212,35 @@ Anthropic, Google, and Groq are driven by a single consolidated catalog file,
 embedded at build time via `go:embed`:
 `internal/provider/catalog/models.json`.
 
-Each entry records the model ID, `owned_by`, USD price per 1M input/output
-tokens, a `source_url`, and the `verified_on` date it was last checked against
-the provider's public pricing page. There is no live pricing fetch; updating
-prices/models is a manual edit to this file (add a row, keep `verified_on`
-current) followed by `go test ./internal/provider/...`. Bedrock and Cohere
-also draw their default model lists from the catalog; Bedrock pricing then
-matches by substring against the catalog's canonical Claude model IDs because
-Bedrock model IDs vary by region/cross-region-inference-profile prefix.
-Models not present in the catalog return zero estimated cost rather than a
-guessed default. Mistral, DeepSeek, and xAI are reachable via `type: custom`
-presets (see above) and have reference-only catalog rows under provider
-`custom-preset-reference` for documentation purposes; they are not read by any
-adapter.
+Entries include identity (`provider`, `id`, `owned_by`), published USD rates,
+`source_url`, and a row-level `verified_on` date. Optional fields are:
+
+| Catalog field | Meaning |
+| --- | --- |
+| `input_per_million`, `output_per_million` | USD per million input/output tokens; absent rates are unknown, not free |
+| `cached_input_per_million`, `cache_write_per_million` | USD per million cache-read/cache-write input tokens; absent subdivision rates use the ordinary input rate |
+| `per_image` | Map from `size[/quality]` to USD per generated image |
+| `per_audio_minute`, `per_million_characters` | Audio duration and speech character rates |
+| `context_window`, `max_output_tokens` | Published token capacity, when known |
+| `modalities`, `supports_tools`, `deprecated_on` | Published capability/lifecycle metadata; missing metadata does not restrict adapter behavior |
+| `notes` | Tier, availability, or billing caveats |
+
+OpenAI, Anthropic, Google, Groq, Bedrock, Cohere, and all eight compatible
+presets use catalog-backed default lists. Explicit custom model lists may
+contain unpriced models. Bedrock IDs match canonical catalog IDs by substring
+because region and inference-profile prefixes vary. There is no live pricing
+fetch. Only rows whose public source was checked get a new verification date;
+the catalog-wide date is the oldest nonempty row date, not a promise that every
+row was checked today.
+
+Input totals include cache reads and writes; output totals include reasoning
+or thinking tokens. Costing bills each input subdivision once and does not add
+reasoning tokens a second time. Logs use `cost_source: catalog`, `override`, or
+`none`; missing applicable rates or missing upstream usage produce `none`, not
+a claim of free service. Cohere rerank search-unit fees are unpriced by this
+token schema. Preset notes identify variable tiers and additional Perplexity
+search/request fees that the token rates do not include. Image prices cover
+only cited size/quality combinations; unknown audio duration remains unpriced.
 
 ## Observability
 

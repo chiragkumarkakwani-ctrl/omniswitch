@@ -77,7 +77,7 @@ func (g *Groq) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRespons
 		return ChatResponse{}, meta, err
 	}
 
-	meta.Cost = pricingFor("groq", req.Model).Cost(chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens)
+	RepriceUsage(&meta, req.Model, chatResp.Usage)
 	return chatResp, meta, nil
 }
 

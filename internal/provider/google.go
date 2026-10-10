@@ -114,11 +114,7 @@ type geminiResponse struct {
 		} `json:"content"`
 		FinishReason string `json:"finishReason"`
 	} `json:"candidates"`
-	UsageMetadata struct {
-		PromptTokenCount     int `json:"promptTokenCount"`
-		CandidatesTokenCount int `json:"candidatesTokenCount"`
-		TotalTokenCount      int `json:"totalTokenCount"`
-	} `json:"usageMetadata"`
+	UsageMetadata geminiUsage `json:"usageMetadata"`
 }
 
 func (g *Google) ChatCompletion(ctx context.Context, req ChatRequest) (ChatResponse, ProviderMeta, error) {
@@ -214,14 +210,10 @@ func (g *Google) ChatCompletion(ctx context.Context, req ChatRequest) (ChatRespo
 				FinishReason: finishReason,
 			},
 		},
-		Usage: Usage{
-			PromptTokens:     gemResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: gemResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      gemResp.UsageMetadata.TotalTokenCount,
-		},
+		Usage: gemResp.UsageMetadata.normalized(),
 	}
 
-	meta.Cost = pricingFor("google", req.Model).Cost(gemResp.UsageMetadata.PromptTokenCount, gemResp.UsageMetadata.CandidatesTokenCount)
+	RepriceUsage(&meta, req.Model, chatResp.Usage)
 	return chatResp, meta, nil
 }
 
