@@ -139,6 +139,13 @@ func TestRecorderBoundAndUnknownOIDCScope(t *testing.T) {
 	if strings.Contains(clean, "_spans") {
 		t.Fatal("caller timings survived an empty measured recorder")
 	}
+	st := newGatewayTestStore(t)
+	forged := WithMetadataJSON(context.Background(), `{"marker":"preserved","_spans":[{"name":"fabricated"}],"_spans_truncated":true}`)
+	(&Handler{store: st}).logRequest(forged, logContext{ID: "no-recorder", Status: "success"})
+	logs, _, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 1})
+	if err != nil || len(logs) != 1 || strings.Contains(logs[0].Metadata, "_spans") || !strings.Contains(logs[0].Metadata, "preserved") {
+		t.Fatalf("unmeasured caller spans persisted: %+v/%v", logs, err)
+	}
 	ctx := WithTraceRecorder(context.Background(), newTraceRecorder())
 	for i := 0; i < 300; i++ {
 		recordTraceSpan(ctx, "attempt", "p", "ok", time.Now(), nil)

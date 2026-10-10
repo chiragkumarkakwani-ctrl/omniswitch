@@ -531,11 +531,7 @@ func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
 		}
 	}
 
-	if spans := spansFromContext(ctx); len(spans) > 0 {
-		entry.Metadata = metadataWithSpans(MetadataJSONFromContext(ctx), spans, traceSpansTruncated(ctx))
-	} else if meta := MetadataJSONFromContext(ctx); meta != "{}" {
-		entry.Metadata = meta
-	}
+	entry.Metadata = metadataWithSpans(MetadataJSONFromContext(ctx), spansFromContext(ctx), traceSpansTruncated(ctx))
 
 	if err := h.store.InsertLog(ctx, entry); err != nil {
 		log.Printf("failed to log request: %v", err)
