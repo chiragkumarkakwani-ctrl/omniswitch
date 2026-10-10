@@ -39,13 +39,18 @@ func (p RetentionPolicy) Enabled() bool {
 }
 
 func (p RetentionPolicy) Validate() error {
-	for name, duration := range map[string]time.Duration{
-		"request_logs": p.RequestLogs, "payloads": p.Payloads,
-		"guardrail_events": p.GuardrailEvents, "shadow_requests": p.ShadowRequests,
-		"limited_and_denied": p.LimitedAndDenied,
+	for _, field := range []struct {
+		name     string
+		duration time.Duration
+	}{
+		{"request_logs", p.RequestLogs},
+		{"payloads", p.Payloads},
+		{"guardrail_events", p.GuardrailEvents},
+		{"shadow_requests", p.ShadowRequests},
+		{"limited_and_denied", p.LimitedAndDenied},
 	} {
-		if duration < 0 {
-			return fmt.Errorf("retention.%s must be nonnegative", name)
+		if field.duration < 0 {
+			return fmt.Errorf("retention.%s must be nonnegative", field.name)
 		}
 	}
 	if p.SweepInterval <= 0 {
