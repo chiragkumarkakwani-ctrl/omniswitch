@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/cache"
+	"github.com/omniswitch-dev/omniswitch/internal/dbfile"
 	"github.com/omniswitch-dev/omniswitch/internal/model"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 
@@ -252,7 +253,10 @@ func New(dir string, options ...OpenOption) (*Store, error) {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
 
-	dbPath := filepath.Join(dir, "sentinel.db")
+	if err := dbfile.MoveLegacyDatabases(dir); err != nil {
+		return nil, err
+	}
+	dbPath := filepath.Join(dir, "omniswitch.db")
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

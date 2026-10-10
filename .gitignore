@@ -14,6 +14,11 @@ coverage.html
 *.test
 
 # Local data
+omniswitch.db
+omniswitch.db-*
+omniswitch_cache.db
+omniswitch_cache.db-*
+# Keep legacy files ignored during upgrades.
 sentinel.db
 sentinel.db-*
 sentinel_cache.db
