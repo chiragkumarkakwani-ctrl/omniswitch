@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	mcpproxy "github.com/omniswitch-dev/omniswitch/internal/proxy"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
@@ -143,6 +144,10 @@ func (a *AuthMiddleware) touchAPIKeyLastUsed(ctx context.Context, id string, now
 }
 
 func (a *AuthMiddleware) serveIdentity(w http.ResponseWriter, r *http.Request, next http.Handler, identity Identity) {
+	if identity.AuthMethod == "oidc" {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		r = r.WithContext(mcpproxy.WithSubjectToken(r.Context(), token))
+	}
 	// These headers are internal identity attributes. Always overwrite them so a
 	// caller cannot choose another tenant's cache scope, quota, or role.
 	if identity.APIKeyID == "" {

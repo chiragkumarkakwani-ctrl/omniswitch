@@ -41,6 +41,7 @@ type Handler struct {
 	logPayloads           atomic.Bool
 	streamGuardrailBuffer bool
 	maxRequestBytes       int64
+	maxUploadBytes        atomic.Int64
 	shadowProvider        string
 	configRouters         sync.Map
 	alerts                *AlertManager
@@ -67,6 +68,7 @@ func New(registry *provider.Registry, rtr *router.Router, st *store.Store, gr *g
 	// Preserve the previous package-level behavior for embedders. The gateway
 	// binary explicitly disables this unless configured otherwise.
 	h.SetLogPayloads(true)
+	h.maxUploadBytes.Store(defaultMaxUploadBytes)
 	if gr != nil {
 		h.guardrails.Store(gr)
 	}
@@ -119,6 +121,14 @@ func (h *Handler) SetStreamGuardrailBuffer(enabled bool) {
 func (h *Handler) SetMaxRequestBytes(limit int64) {
 	if limit > 0 {
 		h.maxRequestBytes = limit
+	}
+}
+
+// SetMaxUploadBytes sets the multipart transcription body limit. Atomic storage
+// lets config reloads safely update it while uploads are in flight.
+func (h *Handler) SetMaxUploadBytes(limit int64) {
+	if limit > 0 {
+		h.maxUploadBytes.Store(limit)
 	}
 }
 

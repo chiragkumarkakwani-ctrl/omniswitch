@@ -96,6 +96,7 @@ type Gateway struct {
 	CircuitBreakerFailures *int         `json:"circuit_breaker_failures,omitempty" yaml:"circuit_breaker_failures,omitempty"`
 	CircuitBreakerCooldown *Duration    `json:"circuit_breaker_cooldown,omitempty" yaml:"circuit_breaker_cooldown,omitempty"`
 	MaxRequestBytes        int64        `json:"max_request_bytes,omitempty" yaml:"max_request_bytes,omitempty"`
+	MaxUploadBytes         int64        `json:"max_upload_bytes,omitempty" yaml:"max_upload_bytes,omitempty"`
 	ReadHeaderTimeout      *Duration    `json:"read_header_timeout,omitempty" yaml:"read_header_timeout,omitempty"`
 	ReadTimeout            *Duration    `json:"read_timeout,omitempty" yaml:"read_timeout,omitempty"`
 	WriteTimeout           *Duration    `json:"write_timeout,omitempty" yaml:"write_timeout,omitempty"`
@@ -185,6 +186,7 @@ type MCPTarget struct {
 	Policy             string            `json:"policy,omitempty" yaml:"policy,omitempty"`
 	Headers            map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	ForwardBearerToken *bool             `json:"forward_bearer_token,omitempty" yaml:"forward_bearer_token,omitempty"`
+	TokenExchange      *MCPTokenExchange `json:"token_exchange,omitempty" yaml:"token_exchange,omitempty"`
 	OpenAPISpec        string            `json:"openapi_spec,omitempty" yaml:"openapi_spec,omitempty"`
 	Enabled            *bool             `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
@@ -295,6 +297,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Gateway.MaxRequestBytes < 0 {
 		return fmt.Errorf("gateway.max_request_bytes must be non-negative")
+	}
+	if cfg.Gateway.MaxUploadBytes < 0 {
+		return fmt.Errorf("gateway.max_upload_bytes must be non-negative")
 	}
 	if storage := strings.ToLower(strings.TrimSpace(cfg.Gateway.Storage)); storage != "" {
 		switch storage {
@@ -427,6 +432,17 @@ func Validate(cfg Config) error {
 			}
 		default:
 			return fmt.Errorf("mcp.targets[%d].transport must be http, streamable_http, or stdio", i)
+		}
+		if target.TokenExchange != nil {
+			if target.ForwardBearerToken != nil && *target.ForwardBearerToken {
+				return fmt.Errorf("mcp.targets[%d]: token_exchange and forward_bearer_token cannot be combined", i)
+			}
+			if strings.EqualFold(strings.TrimSpace(target.Transport), "stdio") {
+				return fmt.Errorf("mcp.targets[%d].token_exchange requires HTTP transport", i)
+			}
+			if err := validateMCPTokenExchange(*target.TokenExchange); err != nil {
+				return fmt.Errorf("mcp.targets[%d].token_exchange: %w", i, err)
+			}
 		}
 	}
 	for i, rule := range cfg.Guardrails.Rules {

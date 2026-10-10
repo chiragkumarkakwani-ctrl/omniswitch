@@ -16,6 +16,7 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/eval"
 	"github.com/omniswitch-dev/omniswitch/internal/feedback"
 	"github.com/omniswitch-dev/omniswitch/internal/gateway"
+	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/org"
 	"github.com/omniswitch-dev/omniswitch/internal/policy"
 	"github.com/omniswitch-dev/omniswitch/internal/prompt"
@@ -82,6 +83,9 @@ func registerGatewayAPIRoutes(mux *http.ServeMux, gw *gateway.Handler) {
 	mux.HandleFunc("/v1/responses", gw.Responses)
 	mux.HandleFunc("/v1/messages", gw.Messages)
 	mux.HandleFunc("/v1/embeddings", gw.Embeddings)
+	mux.HandleFunc("/v1/images/generations", gw.ImageGeneration)
+	mux.HandleFunc("/v1/audio/transcriptions", gw.Transcription)
+	mux.HandleFunc("/v1/audio/speech", gw.Speech)
 	mux.HandleFunc("/v1/moderations", gw.Moderations)
 	mux.HandleFunc("/v1/rerank", gw.Rerank)
 	mux.HandleFunc("/v1/models", gw.ListModels)
@@ -366,18 +370,53 @@ func buildMCPTargets(defaultEngine policy.Engine, settings runtimeSettings) ([]m
 			}
 			engine = loaded
 		}
+		exchange, err := buildMCPTokenExchange(configured.TokenExchange)
+		if err != nil {
+			return nil, fmt.Errorf("MCP target %q: %w", configured.Name, err)
+		}
 		targets = append(targets, mcpproxy.TargetConfig{
 			Name: configured.Name, Transport: configured.Transport, Upstream: configured.Upstream,
 			Command: os.ExpandEnv(configured.Command), Args: expandStrings(configured.Args),
 			Environment: expandHeaderValues(configured.Environment), Headers: expandHeaderValues(configured.Headers), Engine: engine,
 			ForwardBearerToken: configured.ForwardBearerToken != nil && *configured.ForwardBearerToken,
 			OpenAPISpec:        os.ExpandEnv(configured.OpenAPISpec),
+			TokenExchange:      exchange,
 		})
 	}
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("no enabled MCP targets")
 	}
 	return targets, nil
+}
+
+func buildMCPTokenExchange(config *gatewayconfig.MCPTokenExchange) (*mcpproxy.TokenExchangeConfig, error) {
+	if config == nil {
+		return nil, nil
+	}
+	resolve := func(name string) (string, error) {
+		if name == "" {
+			return "", nil
+		}
+		value, ok := os.LookupEnv(name)
+		if !ok || strings.TrimSpace(value) == "" {
+			return "", fmt.Errorf("token_exchange credential environment variable %s must be set", name)
+		}
+		return value, nil
+	}
+	clientSecret, err := resolve(config.ClientSecretEnv)
+	if err != nil {
+		return nil, err
+	}
+	actorToken, err := resolve(config.ActorTokenEnv)
+	if err != nil {
+		return nil, err
+	}
+	return &mcpproxy.TokenExchangeConfig{
+		TokenURL: strings.TrimSpace(config.TokenURL), ClientID: strings.TrimSpace(config.ClientID),
+		ClientSecret: clientSecret, SubjectTokenType: config.SubjectTokenType, RequestedTokenType: config.RequestedTokenType,
+		Scope: config.Scope, Audience: config.Audience, Resource: config.Resource,
+		ActorToken: actorToken, ActorTokenType: config.ActorTokenType,
+	}, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

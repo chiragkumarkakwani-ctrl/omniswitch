@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
@@ -43,6 +44,14 @@ func (l *StoreLogger) Log(ctx context.Context, event Event) error {
 	if event.Decision == "DENY" {
 		status = "denied"
 	}
+	var metadata string
+	if len(event.Metadata) > 0 {
+		payload, err := json.Marshal(event.Metadata)
+		if err != nil {
+			return err
+		}
+		metadata = string(payload)
+	}
 	return l.store.InsertLog(ctx, store.RequestLog{
 		ID:             event.DecisionID,
 		Timestamp:      event.Timestamp,
@@ -53,5 +62,6 @@ func (l *StoreLogger) Log(ctx context.Context, event Event) error {
 		Decision:       event.Decision,
 		DecisionReason: event.Reason,
 		LatencyMs:      float64(event.Latency.Microseconds()) / 1000,
+		Metadata:       metadata,
 	})
 }
