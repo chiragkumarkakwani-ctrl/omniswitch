@@ -359,6 +359,9 @@ open, legacy `sentinel.db` and `sentinel_cache.db` are moved with any `-wal` and
 back up the database and sidecars before upgrading. If old and new database
 files both exist, the new database wins; the old database and its sidecars stay
 untouched and a warning names the old file. No existing destination is overwritten.
+On filesystems without hard-link support (such as SMB/CIFS volumes), each file
+falls back to a same-directory rename after rechecking the destination. Sidecars
+always move before the main database; a failed move rolls back earlier moves.
 
 ## Authorization and Rate Limits
 
