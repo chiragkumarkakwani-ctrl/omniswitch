@@ -36,6 +36,20 @@ export function dialog(title, content, options = {}) {
     if (previous?.isConnected) previous.focus();
   };
   el.addEventListener("close", destroy, { once: true });
+  el.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusable = [...el.querySelectorAll("button, a[href], input, select, textarea, [tabindex]")]
+      .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  });
   document.body.append(el);
   active.add(el);
   el.showModal();
