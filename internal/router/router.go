@@ -235,6 +235,9 @@ func (r *Router) Embeddings(ctx context.Context, req provider.EmbeddingRequest, 
 			lastErr = fmt.Errorf("provider %q circuit is open", current.Name())
 			continue
 		}
+		if err := runPreflight(ctx, current, req.Model); err != nil {
+			return provider.EmbeddingResponse{}, provider.ProviderMeta{Provider: current.Name(), Model: req.Model}, err
+		}
 		callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 		response, meta, err := embeddingProvider.Embeddings(callCtx, req)
 		cancel()
@@ -403,6 +406,9 @@ func (r *Router) Rerank(ctx context.Context, req provider.RerankRequest, provide
 			lastErr = fmt.Errorf("provider %q circuit is open", current.Name())
 			continue
 		}
+		if err := runPreflight(ctx, current, req.Model); err != nil {
+			return provider.RerankResponse{}, provider.ProviderMeta{Provider: current.Name(), Model: req.Model}, err
+		}
 		callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 		response, meta, err := rerankProvider.Rerank(callCtx, req)
 		cancel()
@@ -454,6 +460,9 @@ func (r *Router) Execute(ctx context.Context, req provider.ChatRequest, provider
 		}
 
 		for attempt := 0; attempt < maxRetries; attempt++ {
+			if err := runPreflight(ctx, prov, req.Model); err != nil {
+				return provider.ChatResponse{}, provider.ProviderMeta{Provider: prov.Name(), Model: req.Model}, err
+			}
 			callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 			callCtx, span := startProviderSpan(callCtx, prov.Name(), req.Model, attempt, i > 0, false)
 			resp, meta, err := prov.ChatCompletion(callCtx, req)
@@ -528,6 +537,9 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 				attempts += route.MaxRetries
 			}
 			for attempt := 0; attempt < attempts; attempt++ {
+				if err := runPreflight(ctx, prov, req.Model); err != nil {
+					return nil, provider.ProviderMeta{Provider: prov.Name(), Model: req.Model}, err
+				}
 				callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 				callCtx, span := startProviderSpan(callCtx, prov.Name(), req.Model, attempt, i > 0, true)
 				chunks, meta, err := streamer.ChatCompletionStream(callCtx, req)
@@ -558,6 +570,9 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 			continue
 		}
 
+		if err := runPreflight(ctx, prov, req.Model); err != nil {
+			return nil, provider.ProviderMeta{Provider: prov.Name(), Model: req.Model}, err
+		}
 		callCtx, cancel := withRouteTimeout(ctx, route.Timeout)
 		callCtx, span := startProviderSpan(callCtx, prov.Name(), req.Model, 0, i > 0, false)
 		resp, meta, err := prov.ChatCompletion(callCtx, req)
