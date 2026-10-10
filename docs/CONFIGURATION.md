@@ -89,6 +89,8 @@ observability:
   insecure: true
   timeout: 10s
   prometheus_enabled: true
+  prometheus:
+    public: false
 
 providers:
   - name: openai-prod
@@ -282,9 +284,33 @@ observability:
 
 Setting `OMNISWITCH_OTEL_ENDPOINT` also enables tracing.
 
-Set `prometheus_enabled: true` (the runtime default) to expose the lightweight
-Prometheus endpoint at `GET /metrics`. When authentication is enabled, this
-endpoint requires an authenticated viewer role or higher.
+`observability.prometheus_enabled` defaults to `true` and exposes the in-process
+Prometheus registry at `GET /metrics`. Set it to `false` or set
+`OMNISWITCH_PROMETHEUS_ENABLED=false` to disable the endpoint, including public
+scrapes. Counters accumulate since process start and histograms measure
+end-to-end request duration; they are not rolling SQL totals.
+
+`observability.prometheus.public` defaults to `false`. By default `/metrics`
+stays inside the gateway authentication, authorization, and rate-limit chain;
+when gateway authentication is enabled it requires a viewer role or higher.
+For a trusted monitoring network, explicitly opt in to unauthenticated scraping:
+
+```yaml
+observability:
+  prometheus_enabled: true
+  prometheus:
+    public: true
+```
+
+`OMNISWITCH_METRICS_PUBLIC=true` overrides the file setting. The public route is
+mounted next to `/healthz` and `/readyz` and bypasses authentication,
+authorization, and rate limiting **only for `/metrics`**. It exposes aggregate
+provider/model usage and cost; do not enable it on an untrusted network. Turning
+`gateway.auth` off also removes authentication from the normal private route.
+`GET /api/config` reports `metrics: {public: bool}`; `public` is true only when
+Prometheus is enabled and public scraping is active. Availability and public
+access are startup settings; restart the gateway after changing them. See
+[OBSERVABILITY.md](OBSERVABILITY.md) for the full metric and span references.
 
 ## Security and Runtime Limits
 
@@ -534,7 +560,8 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 - `OMNISWITCH_OTEL_HEADERS`
 - `OMNISWITCH_OTEL_INSECURE`
 - `OMNISWITCH_OTEL_TIMEOUT`
-- `OMNISWITCH_PROMETHEUS_ENABLED`
+- `OMNISWITCH_PROMETHEUS_ENABLED` - defaults to `true`; disables all `/metrics` serving when `false`.
+- `OMNISWITCH_METRICS_PUBLIC` - defaults to `false`; overrides `observability.prometheus.public` and bypasses auth/rate limiting for `/metrics` only.
 - `OMNISWITCH_VAULT_KEY`
 - `OMNISWITCH_MCP_ENABLED` - defaults to `false`. When enabled without `OMNISWITCH_MCP_POLICY` (or `mcp.policy`) set, the gateway falls back to a conservative embedded default policy rather than failing to start.
 - `OMNISWITCH_MCP_POLICY`
@@ -599,6 +626,8 @@ map values/keys, not additional schema fields. Durations use strings such as
 | `observability.insecure` | Allow insecure OTLP transport. |
 | `observability.timeout` | OTLP export timeout; default `10s`. |
 | `observability.prometheus_enabled` | Expose the `/metrics` endpoint. |
+| `observability.prometheus` | Prometheus scrape access settings. |
+| `observability.prometheus.public` | Serve `/metrics` without authentication, authorization, or rate limits; default `false`. `OMNISWITCH_METRICS_PUBLIC` overrides it. |
 | `providers` | Named upstream accounts or inference replicas. |
 | `providers[].name` | Registry/account name; native account models can be addressed as `@name/model`. |
 | `providers[].type` | Native adapter, OpenAI-compatible preset, `custom`, or `inference`. |

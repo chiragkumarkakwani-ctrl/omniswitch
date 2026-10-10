@@ -14,6 +14,8 @@ import (
 // stacks. It reuses the gateway's normal auth, budget, guardrail, routing, and
 // logging posture.
 func (h *Handler) Rerank(w http.ResponseWriter, r *http.Request) {
+	w, r, finishMetrics := h.beginRequestMetrics(w, r)
+	defer finishMetrics()
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return
@@ -24,6 +26,7 @@ func (h *Handler) Rerank(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	setRequestMetricModel(r.Context(), request.Model)
 	if strings.TrimSpace(request.Model) == "" || strings.TrimSpace(request.Query) == "" || len(request.Documents) == 0 {
 		writeError(w, http.StatusBadRequest, "model, query, and documents are required")
 		return
@@ -69,6 +72,7 @@ func (h *Handler) Rerank(w http.ResponseWriter, r *http.Request) {
 	if response.Model == "" {
 		response.Model = request.Model
 	}
+	recordProviderUsage(r.Context(), response.Model, response.Usage, meta)
 	logResponse := provider.ChatResponse{ID: response.ID, Object: "rerank", Created: time.Now().Unix(), Model: response.Model, Usage: response.Usage}
 	h.logRequest(r.Context(), logContext{ID: requestID, TraceID: traceID, SessionID: sessionID, Request: logRequest, Response: &logResponse, Meta: &meta, APIKeyID: keyID, Status: "success"})
 	w.Header().Set("x-omniswitch-trace-id", traceID)

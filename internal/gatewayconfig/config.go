@@ -195,6 +195,13 @@ type Observability struct {
 	Insecure          *bool             `json:"insecure,omitempty" yaml:"insecure,omitempty"`
 	Timeout           *Duration         `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 	PrometheusEnabled *bool             `json:"prometheus_enabled,omitempty" yaml:"prometheus_enabled,omitempty"`
+	Prometheus        Prometheus        `json:"prometheus,omitempty" yaml:"prometheus,omitempty"`
+}
+
+// Prometheus controls whether scrape access bypasses gateway authentication.
+// The existing observability.prometheus_enabled switch controls availability.
+type Prometheus struct {
+	Public *bool `json:"public,omitempty" yaml:"public,omitempty"`
 }
 
 type ProviderAccount struct {

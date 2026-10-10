@@ -63,6 +63,7 @@ type runtimeSettings struct {
 	otelInsecure           bool
 	otelTimeout            time.Duration
 	prometheusEnabled      bool
+	metricsPublic          bool
 	vaultKey               string
 	bootstrapAPIKey        string
 	bootstrapWorkspaceID   string
@@ -157,6 +158,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings.otelInsecure = envBool("OMNISWITCH_OTEL_INSECURE", settings.otelInsecure)
 	settings.otelTimeout = envDuration("OMNISWITCH_OTEL_TIMEOUT", settings.otelTimeout)
 	settings.prometheusEnabled = envBool("OMNISWITCH_PROMETHEUS_ENABLED", settings.prometheusEnabled)
+	settings.metricsPublic = envBool("OMNISWITCH_METRICS_PUBLIC", settings.metricsPublic)
 	settings.shutdownTimeout = envDuration("OMNISWITCH_SHUTDOWN_TIMEOUT", settings.shutdownTimeout)
 	settings.allowNoProviders = envBool("OMNISWITCH_ALLOW_NO_PROVIDERS", settings.allowNoProviders)
 	settings.vaultKey = env("OMNISWITCH_VAULT_KEY", settings.vaultKey)
@@ -313,6 +315,9 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	}
 	if cfg.Observability.PrometheusEnabled != nil {
 		settings.prometheusEnabled = *cfg.Observability.PrometheusEnabled
+	}
+	if cfg.Observability.Prometheus.Public != nil {
+		settings.metricsPublic = *cfg.Observability.Prometheus.Public
 	}
 	if cfg.MCP.Enabled != nil {
 		settings.mcpEnabled = *cfg.MCP.Enabled

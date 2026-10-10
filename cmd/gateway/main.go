@@ -55,6 +55,7 @@ func runServe() {
 	if settings.configPath != "" {
 		log.Printf("loaded gateway config: %s", settings.configPath)
 	}
+	telemetry.DefaultMetrics.SetBuildInfo(version, commit)
 	shutdownTelemetry, err := telemetry.Init(context.Background(), telemetry.Config{
 		Enabled:     settings.otelEnabled,
 		Endpoint:    settings.otelEndpoint,
@@ -175,7 +176,8 @@ func runServe() {
 		log.Fatal(err)
 	}
 	defer closeRateLimiter()
-	topMux := newTopMux(newHealthState(st, registry, settings.allowNoProviders), handler)
+	handler = gw.MetricsMiddleware(handler)
+	topMux := newTopMux(newHealthState(st, registry, settings.allowNoProviders), handler, settings, dash)
 
 	// Print startup banner.
 	fmt.Println(banner())

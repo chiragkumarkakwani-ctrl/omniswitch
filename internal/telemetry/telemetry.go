@@ -51,14 +51,7 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 	if err != nil {
 		return nil, fmt.Errorf("initialize OTLP trace exporter: %w", err)
 	}
-	res, err := resource.New(ctx,
-		resource.WithFromEnv(),
-		resource.WithTelemetrySDK(),
-		resource.WithAttributes(
-			semconv.ServiceName(cfg.ServiceName),
-			attribute.String("service.namespace", "sentinel"),
-		),
-	)
+	res, err := newResource(ctx, cfg.ServiceName)
 	if err != nil {
 		return nil, fmt.Errorf("initialize telemetry resource: %w", err)
 	}
@@ -73,4 +66,15 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 		propagation.Baggage{},
 	))
 	return provider.Shutdown, nil
+}
+
+func newResource(ctx context.Context, serviceName string) (*resource.Resource, error) {
+	return resource.New(ctx,
+		resource.WithFromEnv(),
+		resource.WithTelemetrySDK(),
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			attribute.String("service.namespace", "omniswitch"),
+		),
+	)
 }

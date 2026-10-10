@@ -16,6 +16,8 @@ import (
 // translates the text/message subset to OmniSwitch's common chat pipeline, so
 // budgets, guardrails, cache isolation, logging, and routing are identical.
 func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
+	w, r, finishMetrics := h.beginRequestMetrics(w, r)
+	defer finishMetrics()
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return
@@ -26,6 +28,7 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	setRequestMetricModel(r.Context(), request.Model)
 	chatRequest, err := request.toChatRequest()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -70,6 +73,8 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 // Messages accepts the core Anthropic Messages shape and returns its response
 // shape while using the same provider-neutral OmniSwitch request pipeline.
 func (h *Handler) Messages(w http.ResponseWriter, r *http.Request) {
+	w, r, finishMetrics := h.beginRequestMetrics(w, r)
+	defer finishMetrics()
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return
@@ -80,6 +85,7 @@ func (h *Handler) Messages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	setRequestMetricModel(r.Context(), request.Model)
 	chatRequest := provider.ChatRequest{Model: request.Model, Messages: request.Messages, MaxTokens: request.MaxTokens, Temperature: request.Temperature, TopP: request.TopP}
 	if strings.TrimSpace(request.System) != "" {
 		chatRequest.Messages = append([]provider.Message{{Role: "system", Content: request.System}}, chatRequest.Messages...)

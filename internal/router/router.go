@@ -584,15 +584,19 @@ func (r *Router) ExecuteStream(ctx context.Context, req provider.ChatRequest, pr
 }
 
 func startProviderSpan(ctx context.Context, providerName, model string, attempt int, fallback bool, stream bool) (context.Context, oteltrace.Span) {
-	return otel.Tracer("sentinel/router").Start(
+	return otel.Tracer("omniswitch/router").Start(
 		ctx,
-		"llm.provider.call",
+		"chat "+model,
 		oteltrace.WithSpanKind(oteltrace.SpanKindClient),
 		oteltrace.WithAttributes(
+			attribute.String("gen_ai.operation.name", "chat"),
+			attribute.String("gen_ai.provider.name", providerName),
+			attribute.String("gen_ai.system", providerName),
+			attribute.String("gen_ai.request.model", model),
 			attribute.String("llm.provider", providerName),
 			attribute.String("llm.request.model", model),
-			attribute.Int("sentinel.retry_attempt", attempt),
-			attribute.Bool("sentinel.fallback", fallback),
+			attribute.Int("omniswitch.attempt", attempt),
+			attribute.Bool("omniswitch.fallback", fallback),
 			attribute.Bool("llm.request.stream", stream),
 		),
 	)
@@ -603,8 +607,14 @@ func finishProviderSpan(span oteltrace.Span, meta provider.ProviderMeta, err err
 	span.SetAttributes(
 		attribute.String("llm.response.provider", meta.Provider),
 		attribute.String("llm.response.model", meta.Model),
-		attribute.Float64("llm.usage.cost_usd", meta.Cost),
+		attribute.Float64("omniswitch.usage.cost_usd", meta.Cost),
 	)
+	if meta.ProviderType != "" {
+		span.SetAttributes(attribute.String("gen_ai.provider.name", meta.ProviderType), attribute.String("gen_ai.system", meta.ProviderType))
+	}
+	if meta.Model != "" {
+		span.SetAttributes(attribute.String("gen_ai.response.model", meta.Model))
+	}
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
