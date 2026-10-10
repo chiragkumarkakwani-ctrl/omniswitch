@@ -34,7 +34,7 @@ func TestMigrateCLIStatusDryRunAndUp(t *testing.T) {
 			t.Setenv("OMNISWITCH_MIGRATE_ON_START", "true")
 			initial := migrationSchemaSnapshot(t, postgres, dir, dsn)
 			output := runMigrationCLIForTest(t, "status")
-			for _, text := range []string{"Driver: " + name, "Current version: 0", "Latest version: 3", "Pending migrations: 3"} {
+			for _, text := range []string{"Driver: " + name, "Current version: 0", "Latest version: 4", "Pending migrations: 4"} {
 				if !strings.Contains(output, text) {
 					t.Errorf("status missing %q: %s", text, output)
 				}
@@ -43,7 +43,7 @@ func TestMigrateCLIStatusDryRunAndUp(t *testing.T) {
 				t.Fatalf("status changed schema: before=%q after=%q", initial, after)
 			}
 			output = runMigrationCLIForTest(t, "up", "--dry-run")
-			for _, text := range []string{"1  baseline", "2  request_usage_and_key_limits", "3  request_and_guardrail_indexes"} {
+			for _, text := range []string{"1  baseline", "2  request_usage_and_key_limits", "3  request_and_guardrail_indexes", "4  retention_indexes"} {
 				if !strings.Contains(output, text) {
 					t.Errorf("dry-run missing %q: %s", text, output)
 				}
@@ -52,12 +52,12 @@ func TestMigrateCLIStatusDryRunAndUp(t *testing.T) {
 				t.Fatalf("dry-run changed schema: before=%q after=%q", initial, after)
 			}
 			t.Setenv("OMNISWITCH_MIGRATE_ON_START", "false")
-			if output = runMigrationCLIForTest(t, "up"); !strings.Contains(output, "version 3, pending 0") {
+			if output = runMigrationCLIForTest(t, "up"); !strings.Contains(output, "version 4, pending 0") {
 				t.Fatalf("explicit up did not migrate: %s", output)
 			}
 			current := migrationSchemaSnapshot(t, postgres, dir, dsn)
 			output = runMigrationCLIForTest(t, "status")
-			if !strings.Contains(output, "Current version: 3") || !strings.Contains(output, "Pending migrations: 0") {
+			if !strings.Contains(output, "Current version: 4") || !strings.Contains(output, "Pending migrations: 0") {
 				t.Fatalf("post-migration status: %s", output)
 			}
 			if output = runMigrationCLIForTest(t, "up", "--dry-run"); !strings.Contains(output, "No pending migrations") {

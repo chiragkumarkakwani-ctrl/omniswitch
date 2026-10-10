@@ -39,13 +39,18 @@ func (p RetentionPolicy) Enabled() bool {
 }
 
 func (p RetentionPolicy) Validate() error {
-	for name, duration := range map[string]time.Duration{
-		"request_logs": p.RequestLogs, "payloads": p.Payloads,
-		"guardrail_events": p.GuardrailEvents, "shadow_requests": p.ShadowRequests,
-		"limited_and_denied": p.LimitedAndDenied,
+	for _, field := range []struct {
+		name     string
+		duration time.Duration
+	}{
+		{"request_logs", p.RequestLogs},
+		{"payloads", p.Payloads},
+		{"guardrail_events", p.GuardrailEvents},
+		{"shadow_requests", p.ShadowRequests},
+		{"limited_and_denied", p.LimitedAndDenied},
 	} {
-		if duration < 0 {
-			return fmt.Errorf("retention.%s must be nonnegative", name)
+		if field.duration < 0 {
+			return fmt.Errorf("retention.%s must be nonnegative", field.name)
 		}
 	}
 	if p.SweepInterval <= 0 {
@@ -76,6 +81,12 @@ type retentionExecutor interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
+const (
+	retentionOrdinaryLogs = "COALESCE(status, '') != 'limited' AND COALESCE(decision, '') != 'DENY'"
+	retentionLimitedLogs  = "status = 'limited' OR decision = 'DENY'"
+	retentionPayloads     = "COALESCE(request_body, '') != '' OR COALESCE(response_body, '') != ''"
+)
+
 // Prune deletes rows older than before, using at most batch rows per statement.
 // Cache entries expiring exactly at before are also expired. Only retention-owned
 // table/column pairs are permitted; feedback,
@@ -95,12 +106,17 @@ func (s *Store) prune(ctx context.Context, executor retentionExecutor, table, co
 	if batch <= 0 {
 		return 0, fmt.Errorf("retention batch size must be positive")
 	}
+	query := fmt.Sprintf("DELETE FROM %s WHERE id IN (%s)", table, s.retentionSelection(table, column, filter))
+	return s.retentionBatches(ctx, executor, query, before, batch)
+}
+
+// Shared by the batch statements and their EXPLAIN regression tests.
+func (s *Store) retentionSelection(table, column, filter string) string {
 	predicate := s.retentionBefore(column)
 	if filter != "" {
 		predicate += " AND (" + filter + ")"
 	}
-	query := fmt.Sprintf("DELETE FROM %s WHERE id IN (SELECT id FROM %s WHERE %s ORDER BY %s LIMIT ?)", table, table, predicate, column)
-	return s.retentionBatches(ctx, executor, query, before, batch)
+	return fmt.Sprintf("SELECT id FROM %s WHERE %s ORDER BY %s LIMIT ?", table, predicate, column)
 }
 
 // NullPayloads removes stored request/response bodies without removing their
@@ -114,24 +130,26 @@ func (s *Store) nullPayloads(ctx context.Context, executor retentionExecutor, be
 		return 0, fmt.Errorf("retention batch size must be positive")
 	}
 	query := `UPDATE request_logs SET request_body = NULL, response_body = NULL
-		WHERE id IN (SELECT id FROM request_logs WHERE ` + s.retentionBefore("timestamp") + `
-		AND (COALESCE(request_body, '') != '' OR COALESCE(response_body, '') != '')
-		ORDER BY timestamp LIMIT ?)`
+		WHERE id IN (` + s.retentionSelection("request_logs", "timestamp", retentionPayloads) + `)`
 	return s.retentionBatches(ctx, executor, query, before, batch)
 }
 
-// Timestamps are legacy RFC3339 text. Comparing parsed dates avoids incorrectly
-// pruning newer fractional-second or timezone-offset timestamps. Empty/null
-// cache expiry values represent no expiry and must never match the predicate.
+// Timestamps are legacy RFC3339 text. The lexical upper bound (cutoff + 24h
+// in UTC) lets both dialects range-search their text timestamp indexes without
+// excluding expired timestamps with offsets or fractional seconds. The parsed
+// predicate still decides expiry precisely. Empty/null cache expiry values
+// represent no expiry and are also excluded from the partial expiry index.
 func (s *Store) retentionBefore(column string) string {
 	comparison := " < "
+	predicate := column + " < ? AND "
 	if column == "expires_at" {
 		comparison = " <= "
+		predicate = column + " > '' AND " + predicate
 	}
 	if s.pg {
-		return "NULLIF(" + column + ", '')::timestamptz" + comparison + "?::timestamptz"
+		return predicate + "NULLIF(" + column + ", '')::timestamptz" + comparison + "?::timestamptz"
 	}
-	return "julianday(" + column + ")" + comparison + "julianday(?)"
+	return predicate + "julianday(" + column + ")" + comparison + "julianday(?)"
 }
 
 func (s *Store) retentionBatches(ctx context.Context, executor retentionExecutor, query string, before time.Time, batch int) (int64, error) {
@@ -140,7 +158,7 @@ func (s *Store) retentionBatches(ctx context.Context, executor retentionExecutor
 	}
 	var total int64
 	for {
-		result, err := executor.ExecContext(ctx, query, before.UTC().Format(time.RFC3339Nano), batch)
+		result, err := executor.ExecContext(ctx, query, before.UTC().Add(24*time.Hour).Format(time.RFC3339Nano), before.UTC().Format(time.RFC3339Nano), batch)
 		if err != nil {
 			return total, err
 		}
@@ -218,8 +236,8 @@ func (s *Store) SweepRetention(ctx context.Context, policy RetentionPolicy, at t
 		duration              time.Duration
 		count                 *int64
 	}{
-		{"request_logs", "timestamp", "COALESCE(status, '') != 'limited' AND COALESCE(decision, '') != 'DENY'", policy.RequestLogs, &result.Deleted.RequestLogs},
-		{"request_logs", "timestamp", "status = 'limited' OR decision = 'DENY'", policy.LimitedAndDenied, &result.Deleted.RequestLogs},
+		{"request_logs", "timestamp", retentionOrdinaryLogs, policy.RequestLogs, &result.Deleted.RequestLogs},
+		{"request_logs", "timestamp", retentionLimitedLogs, policy.LimitedAndDenied, &result.Deleted.RequestLogs},
 		{"guardrail_events", "timestamp", "", policy.GuardrailEvents, &result.Deleted.GuardrailEvents},
 		{"shadow_requests", "timestamp", "", policy.ShadowRequests, &result.Deleted.ShadowRequests},
 	} {

@@ -344,6 +344,10 @@ When migrations are pending, `/readyz` returns HTTP 503 with
 Bootstrap key initialization is deferred until the schema is current. Re-enable startup
 migrations before sending traffic. `GET /api/config` reports
 `storage{driver, schema_version, pending_migrations}` without exposing the DSN.
+The latest schema version is 4. Its retention indexes are created transactionally
+on both SQLite and PostgreSQL without changing existing row data; index creation
+can take time and block writes on a large database. With automatic migrations
+disabled, apply version 4 with `omniswitch migrate up` before enabling traffic.
 
 `gateway.alerts` sends threshold-based notifications (for example, elevated
 error rates) to a webhook and/or Slack incoming webhook URL:
@@ -408,7 +412,12 @@ manual sweeps are disabled, including expired-cache cleanup. A startup log line
 prints the effective policy. PostgreSQL uses a nonblocking advisory lock: only
 one concurrent replica sweeps; other replicas skip that run. Shutdown cancels
 and waits for the background job. Sweeps do not run against a database with
-pending schema migrations.
+pending schema migrations. Each batch range-searches a timestamp/expiry index,
+then checks the parsed timestamp to preserve timezone-offset and
+fractional-second boundaries. Partial indexes keep already-cleared payload rows,
+non-expiring cache entries, and the other log retention class out of the
+corresponding sweep scans. Payload-bearing rows inserted late are still cleared
+on the next sweep; no process-local watermark can cause them to be missed.
 
 `GET /api/retention` requires viewer access and reports the effective policy in
 seconds, `sweep_interval_seconds`, live `payload_logging`, and the last sweep's
@@ -427,6 +436,9 @@ open, legacy `sentinel.db` and `sentinel_cache.db` are moved with any `-wal` and
 back up the database and sidecars before upgrading. If old and new database
 files both exist, the new database wins; the old database and its sidecars stay
 untouched and a warning names the old file. No existing destination is overwritten.
+On filesystems without hard-link support (such as SMB/CIFS volumes), each file
+falls back to a same-directory rename after rechecking the destination. Sidecars
+always move before the main database; a failed move rolls back earlier moves.
 
 ## Authorization and Rate Limits
 
