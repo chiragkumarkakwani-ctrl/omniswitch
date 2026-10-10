@@ -1781,6 +1781,13 @@ textarea.input {
     display: inline-flex;
     align-items: center;
   }
+  .table .button,
+  .table .text-link,
+  .sort-button,
+  .inline-details > summary {
+    min-height: 44px;
+    min-width: 44px;
+  }
   .topbar-right .pill {
     max-width: 125px;
     font-size: 9px;
