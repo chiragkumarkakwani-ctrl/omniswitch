@@ -90,3 +90,47 @@ func (b *CircuitBreaker) entry(providerName string) *circuitEntry {
 	}
 	return entry
 }
+
+// CircuitSnapshot is a detached, read-only view; taking a snapshot never
+// advances the state machine or consumes a half-open probe.
+type CircuitSnapshot struct {
+	State       CircuitState `json:"state"`
+	Failures    int          `json:"failures"`
+	Threshold   int          `json:"threshold"`
+	CooldownS   float64      `json:"cooldown_s"`
+	OpenUntil   *time.Time   `json:"open_until"`
+	LastFailure *time.Time   `json:"last_failure"`
+}
+
+func (b *CircuitBreaker) Snapshot() map[string]CircuitSnapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make(map[string]CircuitSnapshot, len(b.entries))
+	for name, entry := range b.entries {
+		value := CircuitSnapshot{State: entry.state, Failures: entry.failures, Threshold: b.threshold, CooldownS: b.cooldown.Seconds()}
+		if !entry.openUntil.IsZero() {
+			at := entry.openUntil.UTC()
+			value.OpenUntil = &at
+		}
+		if !entry.lastFailure.IsZero() {
+			at := entry.lastFailure.UTC()
+			value.LastFailure = &at
+		}
+		out[name] = value
+	}
+	return out
+}
+
+func (b *CircuitBreaker) closedSnapshot() CircuitSnapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return CircuitSnapshot{State: CircuitClosed, Threshold: b.threshold, CooldownS: b.cooldown.Seconds()}
+}
+
+// Reset clears failure history for a provider. Normal Allow/Record logic is
+// unchanged; an operator must explicitly invoke this administrative action.
+func (b *CircuitBreaker) Reset(providerName string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.entries[providerName] = &circuitEntry{state: CircuitClosed}
+}

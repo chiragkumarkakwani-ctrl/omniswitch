@@ -23,7 +23,7 @@ func TestStoreLoggerRecordsMCPEndpoint(t *testing.T) {
 			if err := NewStoreLogger(st).Log(ctx, Event{DecisionID: "mcp-event", Timestamp: time.Now().UTC(), Tool: "test_tool", Decision: "ALLOW"}); err != nil {
 				t.Fatal(err)
 			}
-			logs, _, err := st.ListLogs(ctx, 10, 0, "", "")
+			logs, _, err := st.ListLogs(ctx, store.LogFilter{Limit: 10, Offset: 0, Provider: ""})
 			if err != nil || len(logs) != 1 || logs[0].Endpoint != "mcp" {
 				t.Fatalf("MCP endpoint logs = %+v, err=%v", logs, err)
 			}

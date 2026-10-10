@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/omniswitch-dev/omniswitch/internal/store"
+
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
@@ -38,7 +40,7 @@ func TestRequestLogEndpoints(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("request failed: %d: %s", rec.Code, rec.Body.String())
 			}
-			logs, _, err := st.ListLogs(context.Background(), 10, 0, "", "")
+			logs, _, err := st.ListLogs(context.Background(), store.LogFilter{Limit: 10, Offset: 0, Provider: ""})
 			if err != nil || len(logs) != 1 || logs[0].Endpoint != test.endpoint {
 				t.Fatalf("request endpoint logs = %+v, err=%v, want %q", logs, err, test.endpoint)
 			}

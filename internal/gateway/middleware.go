@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/audit"
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
@@ -55,22 +56,26 @@ func (a *AuthMiddleware) SetTokenAuthenticator(authenticator TokenAuthenticator)
 }
 
 func (a *AuthMiddleware) Wrap(next http.Handler) http.Handler {
-	if !a.enabled {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := WithTraceRecorder(r.Context(), newTraceRecorder())
+		ctx = context.WithValue(ctx, authStartKey, time.Now())
+		r = r.WithContext(ctx)
+		if !a.enabled {
+			a.serveIdentity(w, r, next, Identity{Role: "owner", AuthMethod: "none"})
+			return
+		}
 		if isPublicDiscoveryRoute(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		auth := r.Header.Get("Authorization")
 		if auth == "" {
-			writeError(w, http.StatusUnauthorized, "missing Authorization header")
+			writeAuthError(w, http.StatusUnauthorized, "missing Authorization header")
 			return
 		}
 		key := strings.TrimPrefix(auth, "Bearer ")
 		if key == auth {
-			writeError(w, http.StatusUnauthorized, "Authorization must use Bearer scheme")
+			writeAuthError(w, http.StatusUnauthorized, "Authorization must use Bearer scheme")
 			return
 		}
 
@@ -80,11 +85,11 @@ func (a *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 		apiKey, err := a.store.GetAPIKeyByHash(r.Context(), hashStr)
 		if err == nil {
 			if !apiKey.Enabled {
-				writeError(w, http.StatusForbidden, "API key is disabled")
+				writeAuthError(w, http.StatusUnauthorized, "API key is disabled")
 				return
 			}
 			if apiKey.ExpiresAt != nil && time.Now().After(*apiKey.ExpiresAt) {
-				writeError(w, http.StatusForbidden, "API key has expired")
+				writeAuthError(w, http.StatusUnauthorized, "API key has expired")
 				return
 			}
 
@@ -111,12 +116,12 @@ func (a *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 		}
 
 		if a.authenticator == nil {
-			writeError(w, http.StatusUnauthorized, "invalid API key")
+			writeAuthError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
 		identity, authErr := a.authenticator.Authenticate(r.Context(), key)
 		if authErr != nil {
-			writeError(w, http.StatusUnauthorized, "invalid bearer token")
+			writeAuthError(w, http.StatusUnauthorized, "invalid bearer token")
 			return
 		}
 		a.serveIdentity(w, r, next, identity)
@@ -158,6 +163,10 @@ func (a *AuthMiddleware) serveIdentity(w http.ResponseWriter, r *http.Request, n
 	r.Header.Set("x-omniswitch-organization-id", identity.OrganizationID)
 	r.Header.Set("x-omniswitch-role", normalizeRole(identity.Role))
 	r.Header.Set("x-omniswitch-auth-method", identity.AuthMethod)
+	identity.Role = normalizeRole(identity.Role)
+	if start, ok := r.Context().Value(authStartKey).(time.Time); ok {
+		recordTraceSpan(r.Context(), "auth", "", "ok", start, map[string]any{"method": identity.AuthMethod, "role": identity.Role})
+	}
 	next.ServeHTTP(w, r.WithContext(withIdentity(r.Context(), identity)))
 }
 
@@ -190,20 +199,20 @@ func (a *AuthorizationMiddleware) Wrap(next http.Handler) http.Handler {
 		}
 		identity, ok := IdentityFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "authenticated identity is required")
+			writeAuthError(w, http.StatusUnauthorized, "authenticated identity is required")
 			return
 		}
 		if allowed, reason := a.policy.Evaluate(r, identity); !allowed {
-			writeError(w, http.StatusForbidden, reason)
+			writeAuthError(w, http.StatusForbidden, reason)
 			return
 		}
-		required := requiredRole(r.Method, r.URL.Path)
+		required := requiredRole(r)
 		if required == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
 		if roleRank(identity.Role) < roleRank(required) {
-			writeError(w, http.StatusForbidden, "insufficient role for this endpoint")
+			writeAuthError(w, http.StatusForbidden, "insufficient role for this endpoint")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -214,7 +223,14 @@ func isPublicDiscoveryRoute(r *http.Request) bool {
 	return r.Method == http.MethodGet && r.URL.Path == "/.well-known/agent-card.json"
 }
 
-func requiredRole(method, path string) string {
+func requiredRole(r *http.Request) string {
+	method, path := r.Method, r.URL.Path
+	if (path == "/api/logs/export" && method == http.MethodGet) ||
+		(path == "/api/config/validate" && method == http.MethodPost) ||
+		(path == "/api/mcp/tools" && method == http.MethodGet && r.URL.Query().Has("as_key")) ||
+		(strings.HasPrefix(path, "/api/providers/") && strings.HasSuffix(path, "/circuit/reset") && method == http.MethodPost) {
+		return "admin"
+	}
 	// Health is intentionally public once the outer authentication middleware
 	// permits it; all other dashboard and control-plane routes need a role.
 	if path == "/api/health" || strings.HasPrefix(path, "/v1/") || path == "/mcp" {
@@ -378,7 +394,9 @@ func (backend *localRateLimitBackend) Allow(_ context.Context, key string, limit
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		r = r.WithContext(store.WithRequestEndpoint(r.Context(), r.URL.Path))
+		ctx := store.WithRequestEndpoint(r.Context(), r.URL.Path)
+		ctx = audit.WithTraceID(ctx, strings.TrimSpace(r.Header.Get("x-omniswitch-trace-id")))
+		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 		log.Printf("%s %s %s %v", r.Method, r.URL.Path, r.RemoteAddr, time.Since(start))
 	})
@@ -414,7 +432,7 @@ func CORSMiddlewareWithOrigins(origins []string, next http.Handler) http.Handler
 			w.Header().Set("Vary", "Origin")
 		}
 		if allowAny || origin != "" {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-omniswitch-provider, x-omniswitch-trace-id, x-omniswitch-session-id")
 		}
 		if r.Method == http.MethodOptions {
@@ -456,4 +474,12 @@ func WithTraceID(ctx context.Context, id string) context.Context {
 
 func WithSessionID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, contextKey("session_id"), id)
+}
+
+func writeAuthError(w http.ResponseWriter, status int, message string) {
+	kind, code := "authentication_error", "unauthorized"
+	if status == http.StatusForbidden {
+		kind, code = "permission_error", "insufficient_role"
+	}
+	writeJSON(w, status, map[string]any{"error": map[string]string{"message": message, "type": kind, "code": code}})
 }

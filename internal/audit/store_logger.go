@@ -2,6 +2,9 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
+
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
@@ -43,15 +46,25 @@ func (l *StoreLogger) Log(ctx context.Context, event Event) error {
 	if event.Decision == "DENY" {
 		status = "denied"
 	}
+	latencyMs := float64(event.Latency.Microseconds()) / 1000
+	metadata, err := json.Marshal(map[string]any{"mcp": map[string]any{
+		"agent_id": event.AgentID, "action": event.Action, "resource": event.Resource,
+		"rule": event.Rule, "target": event.Target, "latency_ms": latencyMs,
+	}})
+	if err != nil {
+		return err
+	}
+	traceID, _ := ctx.Value(traceContextKey{}).(string)
+	if traceID == "" {
+		if span := oteltrace.SpanContextFromContext(ctx); span.IsValid() {
+			traceID = span.TraceID().String()
+		}
+	}
 	return l.store.InsertLog(ctx, store.RequestLog{
-		ID:             event.DecisionID,
-		Timestamp:      event.Timestamp,
-		Endpoint:       store.RequestEndpoint(ctx),
-		Provider:       "mcp",
-		Model:          event.Tool,
-		Status:         status,
-		Decision:       event.Decision,
-		DecisionReason: event.Reason,
-		LatencyMs:      float64(event.Latency.Microseconds()) / 1000,
+		ID: event.DecisionID, Timestamp: event.Timestamp,
+		TraceID: traceID, SessionID: event.SessionID,
+		APIKeyID: event.AgentID, Provider: "mcp", Model: event.Tool,
+		Status: status, Decision: event.Decision, DecisionReason: event.Reason,
+		LatencyMs: latencyMs, Metadata: string(metadata),
 	})
 }

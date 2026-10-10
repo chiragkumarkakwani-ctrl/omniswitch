@@ -18,6 +18,8 @@ type Event struct {
 	Tool       string        `json:"tool"`
 	Action     string        `json:"action"`
 	Resource   string        `json:"resource"`
+	Target     string        `json:"target"`
+	SessionID  string        `json:"session_id,omitempty"`
 	Decision   string        `json:"decision"`
 	Rule       string        `json:"rule"`
 	Reason     string        `json:"reason"`
@@ -45,6 +47,8 @@ func NewEvent(req model.ToolRequest, decision model.Decision) Event {
 		Tool:       req.Tool.Name,
 		Action:     req.Action.Name,
 		Resource:   req.Resource.Name,
+		Target:     req.Metadata["mcp.target"],
+		SessionID:  req.Session.ID,
 		Decision:   decision.Status(),
 		Rule:       decision.Rule,
 		Reason:     decision.Reason,

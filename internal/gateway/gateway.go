@@ -189,7 +189,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	shadowHint := firstNonEmpty(r.Header.Get("x-omniswitch-shadow-provider"), activeRouter.ShadowProviderForModel(req.Model), h.shadowProvider)
 	apiKeyID := r.Header.Get("x-omniswitch-key-id")
 	tenantCacheScope := h.tenantCacheScope(r)
-	traceRecorder := newTraceRecorder()
+	traceRecorder := TraceRecorderFromContext(r.Context())
+	if traceRecorder == nil {
+		traceRecorder = newTraceRecorder()
+	}
 	ctx = WithRequestID(r.Context(), reqID)
 	ctx = WithTraceID(ctx, traceID)
 	ctx = WithSessionID(ctx, sessionID)
@@ -288,7 +291,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	stageStart = time.Now()
 	cachedResp, cacheHit := h.cachedResponse(ctx, tenantCacheScope, cacheProvider, backendReq)
-	recordTraceSpan(ctx, "cache_lookup", cacheProvider, map[bool]string{true: "hit", false: "miss"}[cacheHit], stageStart, nil)
+	recordTraceSpan(ctx, "cache", cacheProvider, map[bool]string{true: "hit", false: "miss"}[cacheHit], stageStart, nil)
 	if cacheHit {
 		disp := h.outputGuardrailDisposition(ctx, reqID, &cachedResp)
 		if disp.Denied {
@@ -337,10 +340,8 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	maxAttempts := 1
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		stageStart = time.Now()
 		resp, meta, err = activeRouter.Execute(ctx, backendReq, providerHint)
 		if err != nil {
-			recordTraceSpan(ctx, "provider_call", meta.Provider, "error", stageStart, map[string]any{"error": err.Error()})
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "provider error")
 			span.SetAttributes(attribute.String("llm.response.provider", meta.Provider))
@@ -357,7 +358,6 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, "provider error: "+err.Error())
 			return
 		}
-		recordTraceSpan(ctx, "provider_call", meta.Provider, "ok", stageStart, nil)
 
 		// Output guardrails inspect every completion choice.
 		disp := h.outputGuardrailDisposition(ctx, reqID, &resp)
@@ -387,6 +387,8 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if attempt+1 < maxAttempts {
+				fallbackStart := time.Now()
+				previousProvider := providerHint
 				if disp.RerouteProvider != "" {
 					providerHint = disp.RerouteProvider
 				}
@@ -400,6 +402,9 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 				}
+				recordTraceSpan(ctx, "guardrail_fallback", providerHint, "ok", fallbackStart, map[string]any{
+					"from": previousProvider, "to": providerHint, "model": backendReq.Model, "reason": disp.Reason,
+				})
 				continue
 			}
 		}
@@ -527,7 +532,7 @@ func (h *Handler) logRequest(ctx context.Context, logCtx logContext) {
 	}
 
 	if spans := spansFromContext(ctx); len(spans) > 0 {
-		entry.Metadata = metadataWithSpans(MetadataJSONFromContext(ctx), spans)
+		entry.Metadata = metadataWithSpans(MetadataJSONFromContext(ctx), spans, traceSpansTruncated(ctx))
 	} else if meta := MetadataJSONFromContext(ctx); meta != "{}" {
 		entry.Metadata = meta
 	}
@@ -757,12 +762,19 @@ type guardrailDisposition struct {
 
 // outputGuardrailDisposition evaluates every generated choice. A redaction
 // replaces the affected output before it is logged, cached, or returned.
-func (h *Handler) outputGuardrailDisposition(ctx context.Context, requestID string, resp *provider.ChatResponse) guardrailDisposition {
+func (h *Handler) outputGuardrailDisposition(ctx context.Context, requestID string, resp *provider.ChatResponse) (disp guardrailDisposition) {
+	start := time.Now()
+	defer func() {
+		status := "ok"
+		if disp.Denied {
+			status = "denied"
+		}
+		recordTraceSpan(ctx, "guardrail_output", "", status, start, map[string]any{"redacted": disp.Redacted, "retry": disp.Retry})
+	}()
 	gr := h.guardrails.Load()
 	if gr == nil {
 		return guardrailDisposition{}
 	}
-	var disp guardrailDisposition
 	for index := range resp.Choices {
 		results := gr.EvaluateOutputMessageContext(ctx, resp.Choices[index].Message)
 		h.recordGuardrailResults(ctx, requestID, results)
