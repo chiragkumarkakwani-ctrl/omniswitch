@@ -52,10 +52,12 @@ export async function mcp(ctx) {
       );
       return root;
     }
-    const card = await get("/.well-known/agent-card.json", { signal: ctx.signal }).catch((error) => {
-      if (error.status === 404) return null;
-      throw error;
-    });
+    const card = await get("/.well-known/agent-card.json", { signal: ctx.signal }).catch(
+      (error) => {
+        if (error.status === 404) return null;
+        throw error;
+      },
+    );
     if (!card) {
       root.append(
         empty(

@@ -86,7 +86,9 @@ function replay(ctx) {
             .filter(Boolean)
             .some((body) => new TextEncoder().encode(JSON.stringify(body)).length > maximumBytes);
           if (oversized)
-            throw new Error("Each replay request, including policy and contexts, must fit in 1 MiB.");
+            throw new Error(
+              "Each replay request, including policy and contexts, must fit in 1 MiB.",
+            );
           const current = await post("/api/evals/policy", candidateBody, { signal: ctx.signal });
           const previous = baselineBody
             ? await post("/api/evals/policy", baselineBody, { signal: ctx.signal })

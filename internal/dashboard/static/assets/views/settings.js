@@ -152,7 +152,9 @@ async function rawEditor(ctx) {
         if (signature() !== revision) {
           validated = "";
           save.disabled = true;
-          status.replaceChildren(note("Changed while validation ran. Validate again before saving."));
+          status.replaceChildren(
+            note("Changed while validation ran. Validate again before saving."),
+          );
           return;
         }
         if (data.valid) {

@@ -240,7 +240,11 @@ export async function playground(ctx) {
       { class: "form-row" },
       field("Model", model),
       field("Provider override", provider),
-      field("Saved routing config", preset, "Applies to this request, not the gateway config file."),
+      field(
+        "Saved routing config",
+        preset,
+        "Applies to this request, not the gateway config file.",
+      ),
     ),
     h(
       "details",
