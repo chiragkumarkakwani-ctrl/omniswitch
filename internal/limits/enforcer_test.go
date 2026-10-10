@@ -385,3 +385,17 @@ func TestModelSnapshotBackendErrorAndMissingScopes(t *testing.T) {
 		t.Fatalf("missing scope = %+v/%v", snapshots, err)
 	}
 }
+
+func TestUpdateKeepsInjectedClockWhenOmitted(t *testing.T) {
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	enforcer, err := NewEnforcer(nil, Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := enforcer.Update(Options{Requests: 7, Window: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if !enforcer.Options().Now().Equal(now) {
+		t.Fatal("reload replaced the injected clock")
+	}
+}

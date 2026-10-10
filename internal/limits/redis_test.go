@@ -176,3 +176,10 @@ func TestRedisConstructorAndClosedBackend(t *testing.T) {
 		t.Fatal("list on closed backend")
 	}
 }
+
+func TestInvalidRedisURLDoesNotExposeCredentials(t *testing.T) {
+	_, err := NewRedisBackend("redis://user:private-password@localhost:bad-port/0", "")
+	if err == nil || err.Error() != "rate_limit.redis_url must be a valid Redis connection URL" {
+		t.Fatalf("unsafe URL validation error: %v", err)
+	}
+}
