@@ -20,7 +20,7 @@ func TestRequestLogEndpoints(t *testing.T) {
 		{"/v1/chat/completions", `{"model":"test-model","messages":[{"role":"user","content":"hi"}]}`, "chat_completions", (*Handler).ChatCompletions},
 		{"/v1/chat/completions", `{"model":"test-model","messages":[{"role":"user","content":"hi"}],"stream":true}`, "chat_completions", (*Handler).ChatCompletions},
 		{"/v1/responses", `{"model":"test-model","input":"hi"}`, "responses", (*Handler).Responses},
-		{"/v1/messages", `{"model":"test-model","messages":[{"role":"user","content":"hi"}]}`, "messages", (*Handler).Messages},
+		{"/v1/messages", `{"model":"test-model","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`, "messages", (*Handler).Messages},
 		{"/v1/embeddings", `{"model":"embedding-model","input":"hi"}`, "embeddings", (*Handler).Embeddings},
 		{"/v1/rerank", `{"model":"rerank-model","query":"hi","documents":["hi"]}`, "rerank", (*Handler).Rerank},
 		{"/a2a", `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"parts":[{"text":"hi"}]},"metadata":{"model":"test-model"}}}`, "a2a", (*Handler).A2A},

@@ -1,0 +1,212 @@
+{
+  "description": "request full",
+  "source": "https://platform.claude.com/docs/en/api/messages",
+  "verified_on": "2026-10-09",
+  "kind": "request",
+  "request": {
+    "model": "test-model",
+    "max_tokens": 64,
+    "system": [
+      {
+        "type": "text",
+        "text": "Use tools."
+      },
+      {
+        "type": "text",
+        "text": "Be concise."
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "aGVsbG8="
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "https://example.com/image.png"
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Checking."
+          },
+          {
+            "type": "tool_use",
+            "id": "call_a",
+            "name": "get_weather",
+            "input": {
+              "city": "Boston"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Try again"
+          },
+          {
+            "type": "tool_result",
+            "tool_use_id": "call_a",
+            "content": [
+              {
+                "type": "text",
+                "text": "failed"
+              },
+              {
+                "type": "text",
+                "text": "retry"
+              }
+            ],
+            "is_error": true
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get weather",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "tool_choice": {
+      "type": "tool",
+      "name": "get_weather",
+      "disable_parallel_tool_use": true
+    },
+    "stop_sequences": [
+      "END"
+    ],
+    "temperature": 0.2,
+    "top_p": 0.8,
+    "top_k": 10,
+    "metadata": {
+      "user_id": "user-123"
+    },
+    "stream": true
+  },
+  "expected_chat": {
+    "model": "test-model",
+    "max_tokens": 64,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Use tools.\nBe concise."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/png;base64,aGVsbG8="
+            }
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/image.png"
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Checking.",
+        "tool_calls": [
+          {
+            "id": "call_a",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Boston\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_a",
+        "content": "[error] failed\nretry"
+      },
+      {
+        "role": "user",
+        "content": "Try again"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get weather",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    ],
+    "tool_choice": {
+      "type": "function",
+      "function": {
+        "name": "get_weather"
+      }
+    },
+    "parallel_tool_calls": false,
+    "stop": [
+      "END"
+    ],
+    "temperature": 0.2,
+    "top_p": 0.8,
+    "user": "user-123",
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    }
+  }
+}

@@ -153,6 +153,29 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 		id := fmt.Sprintf("anthropic-%d", time.Now().UnixNano())
 		model := fallbackModel
 		var usage Usage
+		type toolState struct {
+			index    int
+			input    string
+			hasDelta bool
+		}
+		tools := make(map[int]*toolState)
+		toolForBlock := func(blockIndex int) *toolState {
+			if tool, ok := tools[blockIndex]; ok {
+				return tool
+			}
+			// Anthropic indices count all content blocks, not just tools.
+			tool := &toolState{index: len(tools)}
+			tools[blockIndex] = tool
+			return tool
+		}
+		emitTool := func(tool *toolState, call ToolCall) {
+			index := tool.index
+			call.Index = &index
+			chunks <- ChatResponseChunk{
+				ID: id, Object: "chat.completion.chunk", Created: time.Now().Unix(), Model: model,
+				Choices: []ChunkChoice{{Index: 0, Delta: Message{ToolCalls: []ToolCall{call}}}},
+			}
+		}
 		for scanner.Scan() {
 			select {
 			case <-ctx.Done():
@@ -207,26 +230,14 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 				usage.PromptTokens = event.Message.Usage.InputTokens
 			case "content_block_start":
 				if event.ContentBlock.Type == "tool_use" {
-					index := event.Index
-					args := string(event.ContentBlock.Input)
-					if args == "{}" {
-						args = ""
-					}
-					chunks <- ChatResponseChunk{
-						ID:      id,
-						Object:  "chat.completion.chunk",
-						Created: time.Now().Unix(),
-						Model:   model,
-						Choices: []ChunkChoice{{Index: 0, Delta: Message{ToolCalls: []ToolCall{{
-							Index: &index,
-							ID:    event.ContentBlock.ID,
-							Type:  "function",
-							Function: FunctionCall{
-								Name:      event.ContentBlock.Name,
-								Arguments: args,
-							},
-						}}}}},
-					}
+					tool := toolForBlock(event.Index)
+					// Initial input is a placeholder when JSON deltas follow. Retain
+					// the actual upstream value for blocks with no argument deltas.
+					tool.input = string(event.ContentBlock.Input)
+					emitTool(tool, ToolCall{
+						ID: event.ContentBlock.ID, Type: "function",
+						Function: FunctionCall{Name: event.ContentBlock.Name},
+					})
 				}
 			case "content_block_delta":
 				if event.Delta.Text != "" {
@@ -238,18 +249,17 @@ func streamAnthropic(ctx context.Context, body io.ReadCloser, fallbackModel stri
 						Choices: []ChunkChoice{{Index: 0, Delta: Message{Content: event.Delta.Text}}},
 					}
 				}
-				if event.Delta.Type == "input_json_delta" && event.Delta.PartialJSON != "" {
-					index := event.Index
-					chunks <- ChatResponseChunk{
-						ID:      id,
-						Object:  "chat.completion.chunk",
-						Created: time.Now().Unix(),
-						Model:   model,
-						Choices: []ChunkChoice{{Index: 0, Delta: Message{ToolCalls: []ToolCall{{
-							Index:    &index,
-							Function: FunctionCall{Arguments: event.Delta.PartialJSON},
-						}}}}},
+				if event.Delta.Type == "input_json_delta" {
+					tool := toolForBlock(event.Index)
+					tool.hasDelta = true
+					if event.Delta.PartialJSON != "" {
+						emitTool(tool, ToolCall{Function: FunctionCall{Arguments: event.Delta.PartialJSON}})
 					}
+				}
+			case "content_block_stop":
+				if tool := tools[event.Index]; tool != nil && !tool.hasDelta && tool.input != "" {
+					emitTool(tool, ToolCall{Function: FunctionCall{Arguments: tool.input}})
+					tool.input = ""
 				}
 			case "message_delta":
 				usage.CompletionTokens = event.Usage.OutputTokens

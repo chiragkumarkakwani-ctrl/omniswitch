@@ -41,6 +41,7 @@ type Handler struct {
 	logPayloads           atomic.Bool
 	streamGuardrailBuffer bool
 	maxRequestBytes       int64
+	maxUploadBytes        atomic.Int64
 	shadowProvider        string
 	configRouters         sync.Map
 	alerts                *AlertManager
@@ -67,6 +68,7 @@ func New(registry *provider.Registry, rtr *router.Router, st *store.Store, gr *g
 	// Preserve the previous package-level behavior for embedders. The gateway
 	// binary explicitly disables this unless configured otherwise.
 	h.SetLogPayloads(true)
+	h.maxUploadBytes.Store(defaultMaxUploadBytes)
 	if gr != nil {
 		h.guardrails.Store(gr)
 	}
@@ -119,6 +121,14 @@ func (h *Handler) SetStreamGuardrailBuffer(enabled bool) {
 func (h *Handler) SetMaxRequestBytes(limit int64) {
 	if limit > 0 {
 		h.maxRequestBytes = limit
+	}
+}
+
+// SetMaxUploadBytes sets the multipart transcription body limit. Atomic storage
+// lets config reloads safely update it while uploads are in flight.
+func (h *Handler) SetMaxUploadBytes(limit int64) {
+	if limit > 0 {
+		h.maxUploadBytes.Store(limit)
 	}
 }
 
@@ -301,6 +311,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if configRef != "" {
 		cacheProvider = "config:" + configRef + "|" + cacheProvider
 	}
+	cacheProvider = compatibleCacheProvider(ctx, cacheProvider)
 	stageStart = time.Now()
 	cachedResp, cacheHit := h.cachedResponse(ctx, tenantCacheScope, cacheProvider, backendReq)
 	recordTraceSpan(ctx, "cache_lookup", cacheProvider, map[bool]string{true: "hit", false: "miss"}[cacheHit], stageStart, nil)
@@ -321,6 +332,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": map[string]string{"message": disp.Reason, "type": "guardrail", "code": "guardrail_triggered"},
 			})
+			return
+		}
+
+		if !h.enforceCompatibleResponse(w, ctx, logContext{
+			ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Response: &cachedResp, APIKeyID: apiKeyID, Cached: true,
+		}) {
 			return
 		}
 		span.SetStatus(codes.Ok, "")
@@ -427,6 +444,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		break
+	}
+
+	if !h.enforceCompatibleResponse(w, ctx, logContext{
+		ID: reqID, TraceID: traceID, SessionID: sessionID, Request: req, Response: &resp, Meta: &meta, APIKeyID: apiKeyID,
+	}) {
+		return
 	}
 
 	h.storeCache(ctx, tenantCacheScope, cacheProvider, backendReq, resp)
@@ -724,6 +747,12 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 				}
 			}
 
+			if !h.enforceCompatibleResponse(w, ctx, logContext{
+				ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Response: &aggregated, Meta: &meta, APIKeyID: streamCtx.APIKeyID,
+			}) {
+				return
+			}
+
 			setStreamHeaders(w, streamCtx.TraceID, streamCtx.SessionID)
 			if disp.Redacted {
 				writeStream(w, aggregated)
@@ -737,6 +766,19 @@ func (h *Handler) streamProviderResponse(w http.ResponseWriter, ctx context.Cont
 				flusher.Flush()
 			}
 		} else {
+			if err := validateCompatibleResponse(ctx, aggregated); err != nil {
+				h.logRequest(ctx, logContext{
+					ID: streamCtx.ID, TraceID: streamCtx.TraceID, SessionID: streamCtx.SessionID, Request: streamCtx.Request, Response: &aggregated, Meta: &meta, APIKeyID: streamCtx.APIKeyID,
+					Status: "error", ErrorMessage: err.Error(),
+				})
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "compatibility stream error")
+				// The translator turns completion into api_error on an already-open
+				// stream. HTTP status is immutable here; never cache bad arguments.
+				_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+				flusher.Flush()
+				return
+			}
 			fmt.Fprint(w, "data: [DONE]\n\n")
 			flusher.Flush()
 		}
@@ -1080,19 +1122,17 @@ func writeStream(w http.ResponseWriter, resp provider.ChatResponse) {
 		finishReason = "stop"
 	}
 
-	words := strings.Fields(content)
-	if len(words) == 0 && content != "" {
-		words = []string{content}
+	// Cached/redacted responses have no live token boundaries. Preserve
+	// their exact whitespace instead of synthesizing words with strings.Fields.
+	var tokens []string
+	if content != "" {
+		tokens = []string{content}
 	}
-	for i, word := range words {
-		token := word
-		if i < len(words)-1 {
-			token += " "
-		}
+	for _, token := range tokens {
 		chunk := map[string]any{
 			"id":      resp.ID,
 			"object":  "chat.completion.chunk",
-			"created": time.Now().Unix(),
+			"created": resp.Created,
 			"model":   resp.Model,
 			"choices": []map[string]any{
 				{
@@ -1114,7 +1154,7 @@ func writeStream(w http.ResponseWriter, resp provider.ChatResponse) {
 		chunk := provider.ChatResponseChunk{
 			ID:      resp.ID,
 			Object:  "chat.completion.chunk",
-			Created: time.Now().Unix(),
+			Created: resp.Created,
 			Model:   resp.Model,
 			Choices: []provider.ChunkChoice{{Index: 0, Delta: provider.Message{ToolCalls: deltas}}},
 		}
@@ -1125,8 +1165,9 @@ func writeStream(w http.ResponseWriter, resp provider.ChatResponse) {
 	finalChunk := map[string]any{
 		"id":      resp.ID,
 		"object":  "chat.completion.chunk",
-		"created": time.Now().Unix(),
+		"created": resp.Created,
 		"model":   resp.Model,
+		"usage":   resp.Usage,
 		"choices": []map[string]any{
 			{
 				"index":         0,

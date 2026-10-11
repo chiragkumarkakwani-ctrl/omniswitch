@@ -116,7 +116,7 @@ func (p *AliasProvider) Rerank(ctx context.Context, req RerankRequest) (RerankRe
 func (p *AliasProvider) ImageGeneration(ctx context.Context, req ImageRequest) (ImageResponse, ProviderMeta, error) {
 	provider, ok := p.inner.(ImageProvider)
 	if !ok {
-		return ImageResponse{}, ProviderMeta{Provider: p.name, Model: req.Model}, fmt.Errorf("provider %q does not support image generation", p.inner.Name())
+		return ImageResponse{}, ProviderMeta{Provider: p.name, Model: req.Model}, &UnsupportedEndpointError{Provider: p.name, Endpoint: "/v1/images/generations"}
 	}
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
@@ -130,7 +130,7 @@ func (p *AliasProvider) ImageGeneration(ctx context.Context, req ImageRequest) (
 func (p *AliasProvider) Transcription(ctx context.Context, req TranscriptionRequest) (TranscriptionResponse, ProviderMeta, error) {
 	provider, ok := p.inner.(AudioProvider)
 	if !ok {
-		return TranscriptionResponse{}, ProviderMeta{Provider: p.name, Model: req.Model}, fmt.Errorf("provider %q does not support audio transcription", p.inner.Name())
+		return TranscriptionResponse{}, ProviderMeta{Provider: p.name, Model: req.Model}, &UnsupportedEndpointError{Provider: p.name, Endpoint: "/v1/audio/transcriptions"}
 	}
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
@@ -144,7 +144,7 @@ func (p *AliasProvider) Transcription(ctx context.Context, req TranscriptionRequ
 func (p *AliasProvider) Speech(ctx context.Context, req SpeechRequest) (io.ReadCloser, string, ProviderMeta, error) {
 	provider, ok := p.inner.(AudioProvider)
 	if !ok {
-		return nil, "", ProviderMeta{Provider: p.name, Model: req.Model}, fmt.Errorf("provider %q does not support audio speech", p.inner.Name())
+		return nil, "", ProviderMeta{Provider: p.name, Model: req.Model}, &UnsupportedEndpointError{Provider: p.name, Endpoint: "/v1/audio/speech"}
 	}
 	originalModel := req.Model
 	req.Model = p.stripModel(req.Model)
