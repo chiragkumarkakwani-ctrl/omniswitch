@@ -30,6 +30,7 @@ type Config struct {
 	Identity      Identity                `json:"identity,omitempty" yaml:"identity,omitempty"`
 	Authorization Authorization           `json:"authorization,omitempty" yaml:"authorization,omitempty"`
 	RateLimit     RateLimit               `json:"rate_limit,omitempty" yaml:"rate_limit,omitempty"`
+	Retention     Retention               `json:"retention,omitempty" yaml:"retention,omitempty"`
 	Guardrails    Guardrails              `json:"guardrails,omitempty" yaml:"guardrails,omitempty"`
 	MCP           MCP                     `json:"mcp,omitempty" yaml:"mcp,omitempty"`
 	Routes        map[string]router.Route `json:"routes,omitempty" yaml:"routes,omitempty"`
@@ -55,8 +56,7 @@ type OIDC struct {
 // If one or more allow rules are present, every request must match an allow
 // rule and must not match a deny rule.
 type Authorization struct {
-	Rules    []AuthorizationRule `json:"rules,omitempty" yaml:"rules,omitempty"`
-	External ExternalAuthZ       `json:"external,omitempty" yaml:"external,omitempty"`
+	Rules []AuthorizationRule `json:"rules,omitempty" yaml:"rules,omitempty"`
 }
 
 type AuthorizationRule struct {
@@ -64,11 +64,6 @@ type AuthorizationRule struct {
 	When    string `json:"when" yaml:"when"`
 	Effect  string `json:"effect" yaml:"effect"`
 	Message string `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type ExternalAuthZ struct {
-	URL     string    `json:"url,omitempty" yaml:"url,omitempty"`
-	Timeout *Duration `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 }
 
 // RateLimit configures a request quota. When RedisURL is omitted, OmniSwitch
@@ -84,8 +79,10 @@ type RateLimit struct {
 type Gateway struct {
 	Listen         string    `json:"listen,omitempty" yaml:"listen,omitempty"`
 	DataDir        string    `json:"data_dir,omitempty" yaml:"data_dir,omitempty"`
+	PolicyDir      string    `json:"policy_dir,omitempty" yaml:"policy_dir,omitempty"`
 	Storage        string    `json:"storage,omitempty" yaml:"storage,omitempty"`
 	StorageURL     string    `json:"storage_url,omitempty" yaml:"storage_url,omitempty"`
+	MigrateOnStart *bool     `json:"migrate_on_start,omitempty" yaml:"migrate_on_start,omitempty"`
 	Auth           *bool     `json:"auth,omitempty" yaml:"auth,omitempty"`
 	CacheThreshold *float64  `json:"cache_threshold,omitempty" yaml:"cache_threshold,omitempty"`
 	CacheTTL       *Duration `json:"cache_ttl,omitempty" yaml:"cache_ttl,omitempty"`
@@ -200,6 +197,13 @@ type Observability struct {
 	Insecure          *bool             `json:"insecure,omitempty" yaml:"insecure,omitempty"`
 	Timeout           *Duration         `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 	PrometheusEnabled *bool             `json:"prometheus_enabled,omitempty" yaml:"prometheus_enabled,omitempty"`
+	Prometheus        Prometheus        `json:"prometheus,omitempty" yaml:"prometheus,omitempty"`
+}
+
+// Prometheus controls whether scrape access bypasses gateway authentication.
+// The existing observability.prometheus_enabled switch controls availability.
+type Prometheus struct {
+	Public *bool `json:"public,omitempty" yaml:"public,omitempty"`
 }
 
 type ProviderAccount struct {
@@ -273,6 +277,9 @@ func Validate(cfg Config) error {
 	}
 	if cfg.Kind != "" && cfg.Kind != Kind {
 		return fmt.Errorf("unsupported kind %q", cfg.Kind)
+	}
+	if err := validateRetention(cfg.Retention); err != nil {
+		return err
 	}
 	if cfg.Gateway.CacheThreshold != nil && (*cfg.Gateway.CacheThreshold < 0 || *cfg.Gateway.CacheThreshold > 1) {
 		return fmt.Errorf("gateway.cache_threshold must be between 0 and 1")
@@ -360,9 +367,6 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("authorization.rules[%d].effect must be allow or deny", index)
 		}
 	}
-	if cfg.Authorization.External.URL != "" || cfg.Authorization.External.Timeout != nil {
-		return fmt.Errorf("authorization.external is not implemented in this release; remove it from the config and use authorization.rules (CEL) instead")
-	}
 	if cfg.RateLimit.Requests != nil && *cfg.RateLimit.Requests < 1 {
 		return fmt.Errorf("rate_limit.requests must be positive")
 	}
@@ -437,8 +441,21 @@ func Validate(cfg Config) error {
 		if _, err := regexp.Compile(rule.Pattern); err != nil {
 			return fmt.Errorf("guardrails.rules[%d].pattern: %w", i, err)
 		}
-		if rule.Action != "" && !validGuardrailAction(rule.Action) {
-			return fmt.Errorf("guardrails.rules[%d].action must be deny, redact, warn, or log", i)
+		if rule.Action == "fallback" {
+			if strings.TrimSpace(rule.Fallback) == "" {
+				return fmt.Errorf("guardrails.rules[%d].fallback is required for the fallback action", i)
+			}
+			providerName, _, _ := strings.Cut(rule.Fallback, "/")
+			if strings.TrimSpace(strings.TrimPrefix(providerName, "@")) == "" {
+				return fmt.Errorf("guardrails.rules[%d].fallback must name a provider", i)
+			}
+		} else {
+			if rule.Action != "" && !validGuardrailAction(rule.Action) {
+				return fmt.Errorf("guardrails.rules[%d].action must be deny, redact, warn, log, or fallback", i)
+			}
+			if rule.Fallback != "" {
+				return fmt.Errorf("guardrails.rules[%d].fallback requires action: fallback", i)
+			}
 		}
 	}
 	for i, rule := range cfg.Guardrails.ToolRules {
@@ -607,9 +624,5 @@ func parseDurationValue(value string) (time.Duration, error) {
 	if value == "" {
 		return 0, nil
 	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("parse duration %q: %w", value, err)
-	}
-	return parsed, nil
+	return ParseRetentionDuration(value)
 }

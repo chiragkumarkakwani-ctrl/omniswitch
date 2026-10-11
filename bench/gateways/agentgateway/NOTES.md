@@ -1,9 +1,9 @@
 # agentgateway (Solo.io) -- feature-parity decisions for the harness
 
 - **Caching disabled.** Per `docs/comparison/claims.yaml`, agentgateway's
-  own materials do not advertise a semantic/exact cache as a primary
+  own materials do not advertise a similarity/exact cache as a primary
   surface (a prior claim on this project's own homepage that agentgateway
-  has semantic caching was found unsupported). S6 (cache scenario) is
+  has similarity caching was found unsupported). S6 (cache scenario) is
   therefore `n/a` for agentgateway unless a caching mechanism is confirmed
   before that scenario runs; do not invent a cache config to force a
   comparison cell to populate.

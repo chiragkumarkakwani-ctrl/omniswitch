@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
@@ -119,6 +120,22 @@ func registerProviderAccount(registry *provider.Registry, account gatewayconfig.
 	providerType := strings.ToLower(strings.TrimSpace(account.Type))
 
 	switch providerType {
+	case "inference":
+		replicas := make([]provider.InferenceReplica, 0, len(account.Replicas))
+		for _, replica := range account.Replicas {
+			replicas = append(replicas, provider.InferenceReplica{
+				URL: replica.URL, Runtime: replica.Runtime,
+				Models: append([]string(nil), replica.Models...), Priority: replica.Priority,
+			})
+		}
+		var healthInterval time.Duration
+		if account.HealthInterval != nil {
+			healthInterval = account.HealthInterval.Duration
+		}
+		backend := provider.NewInferenceBackend(account.Name, replicas, healthInterval)
+		registry.Register(backend)
+		log.Printf("registered inference provider: %s (%d replicas)", backend.Name(), len(replicas))
+		return
 	case "azure", "azure-openai":
 		envKey := strings.TrimSpace(account.APIKeyEnv)
 		if envKey == "" {

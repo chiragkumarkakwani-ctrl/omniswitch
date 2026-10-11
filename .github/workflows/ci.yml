@@ -35,11 +35,54 @@ jobs:
       - name: Run tests with race detector and coverage
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
+      - name: Enforce internal/store coverage floor (60%)
+        run: |
+          awk '
+            /^github.com\/omniswitch-dev\/omniswitch\/internal\/store\// {
+              statements += $2
+              if ($3 > 0) covered += $2
+            }
+            END {
+              if (statements == 0) {
+                print "No internal/store coverage data"
+                exit 1
+              }
+              percentage = 100 * covered / statements
+              printf "internal/store coverage %.1f%% (floor 60%%)\n", percentage
+              if (percentage < 60) exit 1
+            }
+          ' coverage.out
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omniswitch
+          POSTGRES_DB: omniswitch
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omniswitch -d omniswitch"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OMNISWITCH_TEST_DATABASE_URL: postgres://omniswitch@localhost:5432/omniswitch?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+      - run: go test -race -p 2 ./internal/store ./internal/gateway ./cmd/gateway
 
   lint:
     name: Lint

@@ -21,6 +21,7 @@ kind: GatewayConfig
 gateway:
   listen: ":8080"
   data_dir: ".omniswitch"
+  migrate_on_start: true
   auth: true
   cache_threshold: 0.95
   cache_ttl: 24h
@@ -89,6 +90,8 @@ observability:
   insecure: true
   timeout: 10s
   prometheus_enabled: true
+  prometheus:
+    public: false
 
 providers:
   - name: openai-prod
@@ -165,7 +168,11 @@ Supported provider types:
 - `anthropic`
 - `google`
 - `groq`
+- `azure` / `azure-openai` (deployment endpoint; `endpoint` and `api_version`)
+- `bedrock` / `aws-bedrock` (region and AWS credential environment names)
+- `cohere` (native rerank adapter, not chat)
 - `custom`
+- `inference` (OpenAI-compatible replicas; example below)
 
 ### OpenAI-compatible presets
 
@@ -204,6 +211,44 @@ providers:
     models: [gpt-4o]
 ```
 
+### Inference replicas (vLLM and Ollama)
+
+`type: inference` registers a local provider without an upstream API key.
+Use an OpenAI-compatible base URL ending in `/v1` for vLLM or Ollama. Each
+replica can advertise its own `models`; omitting them lets it accept any model
+when explicitly routed, but does not add entries to `/v1/models`.
+
+```yaml
+providers:
+  - name: local-inference
+    type: inference
+    health_interval: 10s
+    replicas:
+      - url: http://vllm:8000/v1
+        runtime: vllm
+        models: [Qwen/Qwen2.5-7B-Instruct]
+        priority: 0
+      - url: http://ollama:11434/v1
+        runtime: ollama
+        models: [llama3.2]
+        priority: 1
+routes:
+  local-chat:
+    variants:
+      - provider: local-inference
+        model: Qwen/Qwen2.5-7B-Instruct
+        weight: 1
+```
+
+Health probes run at startup and every `health_interval` (default `10s`,
+positive durations required), with a 3-second timeout. vLLM probes `/health`;
+Ollama probes `/api/tags`, relative to the base URL before `/v1`. A non-2xx
+response or network error marks a replica unhealthy. Model-compatible replicas
+are ranked by health, observed latency, queue length, and `priority` (lower
+values preferred). Probes stop during shutdown. `InferenceBackend.ReplicaHealth()`
+returns independent snapshots for the admin health API; `healthy` and
+`last_check` are null until the first probe finishes.
+
 ## Model catalog
 
 `/v1/models` and cost-based routing (the `cost-optimal` strategy) for OpenAI,
@@ -240,9 +285,33 @@ observability:
 
 Setting `OMNISWITCH_OTEL_ENDPOINT` also enables tracing.
 
-Set `prometheus_enabled: true` (the runtime default) to expose the lightweight
-Prometheus endpoint at `GET /metrics`. When authentication is enabled, this
-endpoint requires an authenticated viewer role or higher.
+`observability.prometheus_enabled` defaults to `true` and exposes the in-process
+Prometheus registry at `GET /metrics`. Set it to `false` or set
+`OMNISWITCH_PROMETHEUS_ENABLED=false` to disable the endpoint, including public
+scrapes. Counters accumulate since process start and histograms measure
+end-to-end request duration; they are not rolling SQL totals.
+
+`observability.prometheus.public` defaults to `false`. By default `/metrics`
+stays inside the gateway authentication, authorization, and rate-limit chain;
+when gateway authentication is enabled it requires a viewer role or higher.
+For a trusted monitoring network, explicitly opt in to unauthenticated scraping:
+
+```yaml
+observability:
+  prometheus_enabled: true
+  prometheus:
+    public: true
+```
+
+`OMNISWITCH_METRICS_PUBLIC=true` overrides the file setting. The public route is
+mounted next to `/healthz` and `/readyz` and bypasses authentication,
+authorization, and rate limiting **only for `/metrics`**. It exposes aggregate
+provider/model usage and cost; do not enable it on an untrusted network. Turning
+`gateway.auth` off also removes authentication from the normal private route.
+`GET /api/config` reports `metrics: {public: bool}`; `public` is true only when
+Prometheus is enabled and public scraping is active. Availability and public
+access are startup settings; restart the gateway after changing them. See
+[OBSERVABILITY.md](OBSERVABILITY.md) for the full metric and span references.
 
 ## Security and Runtime Limits
 
@@ -265,6 +334,21 @@ without it. The `OMNISWITCH_DATABASE_URL` environment variable always takes
 precedence over `gateway.storage_url`, so an operator can override storage
 without editing the config file.
 
+`gateway.migrate_on_start` defaults to `true`. Startup applies pending versioned
+schema migrations, adopting existing v0.1.0 data without rewriting it. Each
+version is transactional; PostgreSQL uses an advisory lock across the whole run
+so replicas do not race. Set `gateway.migrate_on_start: false` or
+`OMNISWITCH_MIGRATE_ON_START=false` to open the store without changing its schema.
+When migrations are pending, `/readyz` returns HTTP 503 with
+`reason: "schema_pending"` and the `current` and `latest` schema versions.
+Bootstrap key initialization is deferred until the schema is current. Re-enable startup
+migrations before sending traffic. `GET /api/config` reports
+`storage{driver, schema_version, pending_migrations}` without exposing the DSN.
+The latest schema version is 4. Its retention indexes are created transactionally
+on both SQLite and PostgreSQL without changing existing row data; index creation
+can take time and block writes on a large database. With automatic migrations
+disabled, apply version 4 with `omniswitch migrate up` before enabling traffic.
+
 `gateway.alerts` sends threshold-based notifications (for example, elevated
 error rates) to a webhook and/or Slack incoming webhook URL:
 
@@ -280,10 +364,81 @@ gateway:
 when set; `thresholds` are fractions in `(0, 1]`. Alerts reload alongside
 guardrails when `OMNISWITCH_CONFIG` hot-reload is enabled.
 
-`authorization.external` (an out-of-process HTTP authorization callout) is not
-implemented in this release. Configuring `authorization.external.url` or
-`authorization.external.timeout` fails config validation with a clear error;
-use `authorization.rules` (CEL) instead.
+Out-of-process HTTP authorization is not supported; the unused external
+callout config type has been removed. Use `authorization.rules` (CEL) instead.
+Unknown fields fail strict YAML/JSON parsing.
+
+## Data Retention
+
+Retention is enabled by default: ordinary request logs, guardrail events, and
+limited/denied requests keep 30 days; logged payloads and shadow requests keep
+7 days. Older data is removed automatically. Set a policy to `0` to keep that
+class forever. Payloads can only survive while their request-log row survives.
+Request logs with `status: limited` or `decision: DENY` use the independent
+`limited_and_denied` policy, not the ordinary `request_logs` policy.
+
+All fields below take effect at startup and require a restart after edits.
+Environment values override the config file. Durations accept whole days
+(`30d`), Go duration strings (`168h`, `1h`, `500ms`), or `0`; invalid values
+fail startup rather than silently falling back to a deletion policy.
+
+| Field | Default | Environment override | Effect |
+|---|---|---|---|
+| `retention` | Enabled with the defaults below | — | Top-level retention configuration block; restart required. |
+| `retention.request_logs` | `30d` | `OMNISWITCH_RETENTION_REQUEST_LOGS` | Retention for ordinary request-log rows; `0` keeps them forever. |
+| `retention.payloads` | `7d` | `OMNISWITCH_RETENTION_PAYLOADS` | Clears `request_body` and `response_body`, keeping the row; `0` preserves bodies while their row exists. |
+| `retention.guardrail_events` | `30d` | `OMNISWITCH_RETENTION_GUARDRAIL_EVENTS` | Retention for guardrail-event rows; `0` keeps them forever. |
+| `retention.shadow_requests` | `7d` | `OMNISWITCH_RETENTION_SHADOW_REQUESTS` | Retention for shadow-request rows; `0` keeps them forever. |
+| `retention.limited_and_denied` | `30d` | `OMNISWITCH_RETENTION_LIMITED_AND_DENIED` | Retention for request logs with status `limited` or decision `DENY`; `0` keeps them forever. |
+| `retention.sweep_interval` | `1h` | `OMNISWITCH_RETENTION_SWEEP_INTERVAL` | Positive time between scheduled sweeps; the first sweep waits one full interval. |
+| `retention.batch_size` | `5000` | `OMNISWITCH_RETENTION_BATCH_SIZE` | Positive maximum rows per update/delete statement. |
+
+```yaml
+retention:
+  request_logs: 30d
+  payloads: 7d
+  guardrail_events: 30d
+  shadow_requests: 7d
+  limited_and_denied: 30d
+  sweep_interval: 1h
+  batch_size: 5000
+```
+
+Each sweep clears expired payloads before deleting rows, then removes expired
+similarity-cache entries (the `semantic_cache` table) by their `expires_at`
+value. Feedback, API/provider keys, prompts, configs, and other durable records
+are never pruned. If all five policy durations are `0`, both scheduled and
+manual sweeps are disabled, including expired-cache cleanup. A startup log line
+prints the effective policy. PostgreSQL uses a nonblocking advisory lock: only
+one concurrent replica sweeps; other replicas skip that run. Shutdown cancels
+and waits for the background job. Sweeps do not run against a database with
+pending schema migrations. Each batch range-searches a timestamp/expiry index,
+then checks the parsed timestamp to preserve timezone-offset and
+fractional-second boundaries. Partial indexes keep already-cleared payload rows,
+non-expiring cache entries, and the other log retention class out of the
+corresponding sweep scans. Payload-bearing rows inserted late are still cleared
+on the next sweep; no process-local watermark can cause them to be missed.
+
+`GET /api/retention` requires viewer access and reports the effective policy in
+seconds, `sweep_interval_seconds`, live `payload_logging`, and the last sweep's
+per-table deletion counts, `payloads_cleared`, and error. `POST
+/api/retention/sweep` requires admin access, runs synchronously, and returns the
+same object. `last_run` and `next_run` are `null` until the first sweep and when
+all five policies are `0`. Sweep state is process-local and resets on restart;
+skipped replicas do not claim another replica's counts. `GET /api/config.retention`
+contains the same five-field object as the retention endpoint's `policy`.
+
+### SQLite filenames
+
+The data directory now uses `omniswitch.db` and `omniswitch_cache.db`. On first
+open, legacy `sentinel.db` and `sentinel_cache.db` are moved with any `-wal` and
+`-shm` sidecars, with a log line for each move. Stop old gateway processes and
+back up the database and sidecars before upgrading. If old and new database
+files both exist, the new database wins; the old database and its sidecars stay
+untouched and a warning names the old file. No existing destination is overwritten.
+On filesystems without hard-link support (such as SMB/CIFS volumes), each file
+falls back to a same-directory rename after rechecking the destination. Sidecars
+always move before the main database; a failed move rolls back earlier moves.
 
 ## Authorization and Rate Limits
 
@@ -331,14 +486,17 @@ request-shaping fields are `model`, `temperature`, `max_tokens`, `top_p`,
 
 Built-in input/output checks cover PII, prompt injection, SQL patterns, toxic
 content, and code leakage. `guardrails.actions` can set their action; regex
-rules can run at `input`, `output`, or `both` stages. Supported actions are
-`deny`, `redact`, `warn`, `log`, `retry`, `reroute`, and `fallback`. Every trigger produces a structured
+rules can run at `input`, `output`, or `both` stages. All file-configurable
+checks accept `deny`, `redact`, `warn`, and `log`. Regex rules also accept
+`action: fallback` with a required `fallback: provider` or
+`fallback: provider/model` target; the gateway reroutes instead of rejecting. A target with another action is
+rejected rather than silently ignored. Every trigger produces a structured
 guardrail audit event; `deny` and `redact` are enforced in the local request
-path. `retry` evaluates up to `max_retries` (default 1) times. `reroute` overrides
-the provider selection to a specified `reroute_provider`, and `fallback` overrides
-the requested model to a specified `fallback` model (e.g. `anthropic/claude-3`). `stream_buffer: true` (default) buffers an SSE response before emitting
-it, allowing output enforcement; turning it off reduces latency but makes
-stream output a trusted-provider trade-off.
+path. The runtime engine also has retry/reroute actions, but the file
+validator does not accept those actions or expose all their fields.
+`stream_buffer: true` (default) buffers an SSE response before emitting it,
+allowing output enforcement. Turning it off makes streamed output enforcement
+a trusted-provider trade-off.
 
 `guardrails.webhooks` adds an opt-in connector for a managed or in-house
 moderation service. OmniSwitch sends `{stage, text, messages}` and expects
@@ -382,6 +540,55 @@ Distributed trace context propagates into `params._meta.traceparent`
 can continue the gateway's OTel trace. A2A is not an MCP target type; it is
 served separately through public Agent Card discovery and `/a2a` JSON-RPC.
 
+## Policy replay
+
+`POST /api/evals/policy` accepts 1–1,000 uploaded tool requests in a JSON body
+of at most 1 MiB (an oversized body returns `413`). There are no dataset or
+experiment CRUD handlers. Named policies are bare `.cel`, `.yaml`, or `.yml`
+filenames inside `gateway.policy_dir`, default `policies`, relative to the
+process working directory. `OMNISWITCH_POLICY_DIR` overrides this setting.
+Absolute paths, nested paths, traversal, and symlinks escaping this directory
+are rejected. Keep this dedicated directory writable only by the operator.
+
+```yaml
+gateway:
+  policy_dir: /etc/omniswitch/policies
+```
+
+Use `policies: [{"name":"production-delete.yaml"}]` for a server-side file.
+Use `policies: [{"name":"candidate.cel","body":"action.name == \"delete\""}]`
+for inline CEL; a `.yaml`/`.yml` name selects an inline Policy document instead.
+The legacy arbitrary-path `policy_paths` field is rejected. The combined
+candidate/baseline policy bodies also have a 1 MiB limit, including file bodies,
+and at most 1,000 policies may be supplied.
+
+Optional `baseline_policies` uses the same name/body shape and confinement.
+The server evaluates both sets against the same uploaded `requests`. The
+response keeps `total`, `allowed`, `denied`, `errors`, and `results`, and adds
+`baseline` plus `diff` (`changed`, `allowed_to_denied`, `denied_to_allowed`,
+and per-index `changes` with before/after decisions). Diff compares allowed,
+matched rule, reason, and evaluation errors, not generated IDs, timing, or
+trace hashes. No inference calls or persistent datasets are involved.
+
+## A2A capabilities
+
+A2A is enabled at `/a2a` with public Agent Card discovery at
+`/.well-known/agent-card.json`. Canonical methods are `SendMessage`,
+`SendMessageStream`, `GetTask`, `CancelTask`, and `GetExtendedAgentCard`.
+There is no separate A2A config switch. `/api/config` reports:
+
+```json
+{"enabled":true,"streaming":true,"streaming_mode":"sse_task_events","task_lifecycle":true,"task_store":"in_memory","cancel":"best_effort","push_notifications":false,"methods":["SendMessage","SendMessageStream","GetTask","CancelTask","GetExtendedAgentCard"]}
+```
+
+SSE sends task status/artifact events, not token deltas. Tasks are in memory
+and are lost on restart (not shared across replicas). New tasks trigger pruning
+of records older than one hour.
+Cancellation is best effort: it updates state without aborting upstream
+inference, and completion can supersede the canceled state. No push
+notifications or downstream A2A proxy are implemented. The Agent Card uses
+camelCase capability qualifiers for the same boundaries.
+
 ## Provider Vault
 
 Set `OMNISWITCH_VAULT_KEY` before creating virtual keys so encrypted provider credentials remain decryptable after restart.
@@ -403,6 +610,8 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 
 - `OMNISWITCH_LISTEN`
 - `OMNISWITCH_DATA`
+- `OMNISWITCH_DATABASE_URL` - a `postgres://` or `postgresql://` DSN enables PostgreSQL for the persistent store: keys, logs, budgets, saved configuration, and response cache. The driver remains experimental; shared persistence does not make A2A tasks or runtime health shared or establish production active-active readiness. When unset (or not a postgres URL), SQLite in the data directory is used.
+- `OMNISWITCH_MIGRATE_ON_START` - defaults to `true`; overrides `gateway.migrate_on_start`. When `false`, pending schema migrations are not applied and `/readyz` returns `schema_pending`.
 - `OMNISWITCH_DATABASE_URL` - a `postgres://` DSN enables PostgreSQL storage so multiple gateway replicas share keys, logs, budgets, and configuration. When unset (or not a postgres URL), SQLite in the data directory is used.
 - `OMNISWITCH_AUTH`
 - `OMNISWITCH_BOOTSTRAP_API_KEY`
@@ -441,7 +650,8 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 - `OMNISWITCH_OTEL_HEADERS`
 - `OMNISWITCH_OTEL_INSECURE`
 - `OMNISWITCH_OTEL_TIMEOUT`
-- `OMNISWITCH_PROMETHEUS_ENABLED`
+- `OMNISWITCH_PROMETHEUS_ENABLED` - defaults to `true`; disables all `/metrics` serving when `false`.
+- `OMNISWITCH_METRICS_PUBLIC` - defaults to `false`; overrides `observability.prometheus.public` and bypasses auth/rate limiting for `/metrics` only.
 - `OMNISWITCH_VAULT_KEY`
 - `OMNISWITCH_MCP_ENABLED` - defaults to `false`. When enabled without `OMNISWITCH_MCP_POLICY` (or `mcp.policy`) set, the gateway falls back to a conservative embedded default policy rather than failing to start.
 - `OMNISWITCH_MCP_POLICY`
@@ -457,6 +667,176 @@ curl -X POST http://localhost:8080/api/virtual-keys \
 
 See [`docs/CLI.md`](CLI.md) for `omniswitch serve`, `omniswitch validate-config`,
 and `omniswitch version`. `GET /healthz` (liveness) and `GET /readyz`
-(readiness: store reachability and provider registration) are always
+(readiness: store reachability, current schema, and provider registration) are always
 unauthenticated, independent of `gateway.auth`, and safe to point Kubernetes
 or load-balancer health checks at.
+
+## Supported YAML keys
+
+This inventory is checked against every YAML tag in the config structs by
+`internal/gatewayconfig/docs_test.go`. The reverse check parses each documented
+key with strict field checking. `[]` means a list item; `*` means a named map
+entry. Header names, model aliases, parameter names, and environment names are
+map values/keys, not additional schema fields. Durations use strings such as
+`1s`, `5m`, and `24h`. Provider-specific fields apply to the adapter noted below.
+
+| Key | Meaning / default |
+| --- | --- |
+| `apiVersion` | Schema version: `omniswitch.dev/v1`. |
+| `kind` | Document kind: `GatewayConfig`. |
+| `gateway` | Listener, storage, cache, and safety settings. |
+| `gateway.listen` | HTTP listen address; default `:8080`. |
+| `gateway.data_dir` | SQLite data directory; default current directory. |
+| `gateway.policy_dir` | Dedicated named-policy replay directory; default `policies`. |
+| `gateway.storage` | Validation hint: `sqlite` or `postgres`; `postgres` requires `storage_url`. Driver selection follows `storage_url`. |
+| `gateway.storage_url` | PostgreSQL DSN for the persistent store, including keys, logs, budgets, saved config, and response cache; empty uses SQLite. PostgreSQL is experimental; A2A tasks and runtime health remain process-local. |
+| `gateway.migrate_on_start` | Apply pending schema migrations at startup; default `true`. `OMNISWITCH_MIGRATE_ON_START` overrides it. With `false`, `/readyz` returns `503` until `omniswitch migrate up` applies them. |
+| `gateway.auth` | Require API-key/OIDC authentication; OIDC configuration enables auth. |
+| `gateway.cache_threshold` | Lexical similarity cache cosine threshold; default `0.95`. |
+| `gateway.cache_ttl` | Exact/lexical response cache lifetime; default `24h`. |
+| `gateway.cache_scope` | Tenant boundary: `api_key` (default), `workspace`, `organization`, or explicit shared `global`. |
+| `gateway.log_payloads` | Persist request/response bodies; default `false`. |
+| `gateway.cors_origins` | Allowed browser origins; wildcard is rejected with auth enabled. |
+| `gateway.circuit_breaker_failures` | Failures before opening a provider circuit; default `5`. |
+| `gateway.circuit_breaker_cooldown` | Circuit reset interval; default `60s`. |
+| `gateway.max_request_bytes` | Maximum JSON request body bytes; default `10485760`. |
+| `gateway.read_header_timeout` | HTTP header timeout; default `5s`. |
+| `gateway.read_timeout` | HTTP read timeout; default `30s`. |
+| `gateway.write_timeout` | HTTP write timeout; default `0s` to avoid truncating streams. |
+| `gateway.idle_timeout` | HTTP keep-alive idle timeout; default `60s`. |
+| `gateway.shadow_provider` | Background chat mirror provider; its response is not returned to the caller. |
+| `gateway.alerts` | Budget-threshold notification destinations. |
+| `gateway.alerts.webhook_url` | Generic budget notification HTTP(S) endpoint. |
+| `gateway.alerts.slack_url` | Slack incoming-webhook HTTP(S) endpoint. |
+| `gateway.alerts.thresholds` | Budget fractions in `(0, 1]`; an empty list emits no threshold alerts. |
+| `observability` | OTLP trace export and Prometheus settings. |
+| `observability.otel_enabled` | Enable OTLP traces; setting an endpoint also enables export. |
+| `observability.otlp_endpoint` | OTLP/HTTP trace collector URL. |
+| `observability.service_name` | OTel service name; default `omniswitch-gateway`. |
+| `observability.headers` | Collector request headers; environment-expanded at startup. |
+| `observability.insecure` | Allow insecure OTLP transport. |
+| `observability.timeout` | OTLP export timeout; default `10s`. |
+| `observability.prometheus_enabled` | Expose the `/metrics` endpoint. |
+| `observability.prometheus` | Prometheus scrape access settings. |
+| `observability.prometheus.public` | Serve `/metrics` without authentication, authorization, or rate limits; default `false`. `OMNISWITCH_METRICS_PUBLIC` overrides it. |
+| `providers` | Named upstream accounts or inference replicas. |
+| `providers[].name` | Registry/account name; native account models can be addressed as `@name/model`. |
+| `providers[].type` | Native adapter, OpenAI-compatible preset, `custom`, or `inference`. |
+| `providers[].api_key_env` | Environment variable containing an upstream key; adapter default applies when omitted. |
+| `providers[].base_url` | Custom/preset OpenAI-compatible base URL; also Azure endpoint fallback. |
+| `providers[].endpoint` | Azure OpenAI deployment endpoint (takes precedence over `base_url`). |
+| `providers[].api_version` | Azure OpenAI API version. |
+| `providers[].region` | AWS Bedrock region. |
+| `providers[].aws_access_key_env` | AWS access-key environment name; default `AWS_ACCESS_KEY_ID`. |
+| `providers[].aws_secret_key_env` | AWS secret-key environment name; default `AWS_SECRET_ACCESS_KEY`. |
+| `providers[].aws_session_token_env` | Optional AWS session-token environment name; default `AWS_SESSION_TOKEN`. |
+| `providers[].guardrail_id` | AWS Bedrock guardrail identifier. |
+| `providers[].guardrail_version` | AWS Bedrock guardrail version. |
+| `providers[].models` | Advertised models for custom/preset, Azure, or Bedrock accounts; other native adapters use their catalogs. Inference uses replica models. |
+| `providers[].extra_headers` | Custom/preset server-side request headers; values support environment expansion. |
+| `providers[].replicas` | Inference replicas (required for `type: inference`). |
+| `providers[].replicas[].url` | Runtime base URL; use `/v1` for vLLM/Ollama OpenAI-compatible chat. |
+| `providers[].replicas[].runtime` | `vllm`/`ollama` use OpenAI-compatible chat; `tgi` uses non-streaming `/generate`. Default `openai`; Triton chat is unsupported. |
+| `providers[].replicas[].models` | Accepted model names; empty accepts any explicitly routed model. |
+| `providers[].replicas[].priority` | Replica score penalty; lower nonnegative values preferred. |
+| `providers[].health_interval` | Inference probe interval; positive duration, default `10s`. |
+| `identity` | Workload identity verification. |
+| `identity.oidc` | OIDC JWT verification settings. |
+| `identity.oidc.jwks_url` | JWKS HTTP(S) endpoint used to verify JWT signatures. |
+| `identity.oidc.issuer` | Required JWT issuer when configured. |
+| `identity.oidc.audience` | Required JWT audience when configured. |
+| `identity.oidc.role_claim` | Claim containing the gateway role; default `role`. |
+| `identity.oidc.workspace_claim` | Workspace claim name; default `workspace_id`. |
+| `identity.oidc.organization_claim` | Organization claim name; default `organization_id`. |
+| `identity.oidc.cache_ttl` | JWKS cache lifetime; default `5m`. |
+| `authorization` | CEL request authorization. |
+| `authorization.rules` | Ordered allow/deny CEL rules; a deny takes precedence. |
+| `authorization.rules[].name` | Rule label for audit/error context. |
+| `authorization.rules[].when` | CEL predicate over identity, method, path, and model. |
+| `authorization.rules[].effect` | `allow` or `deny`; allow rules require at least one match. |
+| `authorization.rules[].message` | Denial response explanation. |
+| `rate_limit` | Request quota backend and window. |
+| `rate_limit.requests` | Request count per quota window; default `120`. |
+| `rate_limit.window` | Positive quota window; default `1m`. |
+| `rate_limit.redis_url` | Optional Redis URL for coordinated fixed windows; otherwise local sliding windows. |
+| `rate_limit.prefix` | Redis quota-key namespace; default `omniswitch:ratelimit`. |
+| `rate_limit.fail_open` | Allow requests on Redis failure; default `false` returns `503`. |
+| `retention` | Data retention policy; restart required. See [Data Retention](#data-retention). |
+| `retention.request_logs` | Ordinary request-log rows; default `30d`; `0` keeps them forever. |
+| `retention.payloads` | Clears stored request and response bodies but keeps the row; default `7d`; `0` keeps bodies. |
+| `retention.guardrail_events` | Guardrail-event rows; default `30d`; `0` keeps them forever. |
+| `retention.shadow_requests` | Shadow-request rows; default `7d`; `0` keeps them forever. |
+| `retention.limited_and_denied` | Request logs with status `limited` or decision `DENY`; default `30d`; `0` keeps them forever. |
+| `retention.sweep_interval` | Positive time between sweeps; default `1h`; the first sweep waits one interval. |
+| `retention.batch_size` | Positive maximum rows per delete or update statement; default `5000`. |
+| `guardrails` | Local rules, tool checks, and remote checks. |
+| `guardrails.actions` | Built-in check name to action (`deny`, `redact`, `warn`, `log`). |
+| `guardrails.rules` | Text regex checks. |
+| `guardrails.rules[].name` | Rule/audit label. |
+| `guardrails.rules[].stage` | `input`, `output`, or `both`; default `both`. |
+| `guardrails.rules[].pattern` | Go-compatible regular expression. |
+| `guardrails.rules[].action` | `deny`, `redact`, `warn`, `log`, or `fallback`; default `deny`. |
+| `guardrails.rules[].message` | Explanation when the pattern matches. |
+| `guardrails.rules[].fallback` | Reroute target: `provider` or `provider/model`, with a nonempty provider name; required with `action: fallback` and rejected with other actions. |
+| `guardrails.tool_rules` | Tool-name/argument regex checks. |
+| `guardrails.tool_rules[].name` | Tool rule/audit label. |
+| `guardrails.tool_rules[].stage` | `input`, `output`, or `both`; default `output`. |
+| `guardrails.tool_rules[].tool_name` | Regex over tool/function name. |
+| `guardrails.tool_rules[].arguments_pattern` | Regex over serialized tool arguments. |
+| `guardrails.tool_rules[].action` | `deny`, `redact`, `warn`, or `log`; default `deny`. |
+| `guardrails.tool_rules[].message` | Explanation for a matching tool call. |
+| `guardrails.webhooks` | External JSON moderation checks. |
+| `guardrails.webhooks[].name` | Webhook/audit label. |
+| `guardrails.webhooks[].url` | JSON moderation HTTP(S) endpoint. |
+| `guardrails.webhooks[].stage` | `input`, `output`, or `both`; default `both`. |
+| `guardrails.webhooks[].action` | Action when the service reports triggered; default `deny`. |
+| `guardrails.webhooks[].headers` | Server-side HTTP headers; environment-expanded. |
+| `guardrails.webhooks[].timeout` | Remote-check timeout; default `3s`. |
+| `guardrails.webhooks[].fail_open` | Allow on check errors/timeouts; default `false`. |
+| `guardrails.webhooks[].max_retries` | Additional attempts on network errors/5xx; default `0` (4xx and decisions are final). |
+| `guardrails.llm_judges` | OpenAI-compatible chat-based moderation checks. |
+| `guardrails.llm_judges[].name` | Judge/audit label. |
+| `guardrails.llm_judges[].url` | OpenAI-compatible chat-completions HTTP(S) URL. |
+| `guardrails.llm_judges[].model` | Moderation model name. |
+| `guardrails.llm_judges[].stage` | `input`, `output`, or `both`; default `both`. |
+| `guardrails.llm_judges[].action` | Action when the judge reports triggered; default `deny`. |
+| `guardrails.llm_judges[].system_prompt` | Optional override for the JSON moderation system prompt. |
+| `guardrails.llm_judges[].api_key_env` | Environment variable containing the judge API key. |
+| `guardrails.llm_judges[].headers` | Judge request headers; environment-expanded. |
+| `guardrails.llm_judges[].timeout` | Judge timeout; default `10s`. |
+| `guardrails.llm_judges[].fail_open` | Allow on judge errors/timeouts; default `false`. |
+| `guardrails.stream_buffer` | Buffer SSE before output enforcement; default `true`. |
+| `mcp` | MCP proxy targets and policies. |
+| `mcp.enabled` | Mount MCP proxy routes; default `false`. |
+| `mcp.policy` | Default CEL/Policy file for tool calls. |
+| `mcp.upstream` | Legacy single HTTP MCP upstream; use `targets` for federation. |
+| `mcp.targets` | Named HTTP, stdio, or OpenAPI targets. |
+| `mcp.targets[].name` | Target label and federated tool prefix. |
+| `mcp.targets[].transport` | `http`/`streamable_http` (default) or `stdio`. |
+| `mcp.targets[].upstream` | HTTP MCP or OpenAPI REST base URL. |
+| `mcp.targets[].command` | Executable for a stdio target. |
+| `mcp.targets[].args` | Stdio command arguments; environment-expanded. |
+| `mcp.targets[].environment` | Stdio environment additions; values environment-expanded. |
+| `mcp.targets[].policy` | Target policy file; overrides the MCP default. |
+| `mcp.targets[].headers` | Server-side HTTP headers; environment-expanded. |
+| `mcp.targets[].forward_bearer_token` | Forward OIDC Bearer tokens; default `false`. Gateway API keys are never forwarded. |
+| `mcp.targets[].openapi_spec` | OpenAPI YAML/JSON file or HTTP(S) URL, converted to policy-gated MCP tools. |
+| `mcp.targets[].enabled` | Enable this target; default `true`. |
+| `routes` | Model/alias names mapped to routing rules. |
+| `routes.*.strategy` | `direct`, `fallback`, `round-robin`, `least-latency`, or `cost-optimal`; omitted infers direct/fallback. |
+| `routes.*.provider` | Primary registry provider/account. |
+| `routes.*.fallbacks` | Ordered fallback providers/accounts. |
+| `routes.*.max_retries` | Additional retry attempts; default `0`. |
+| `routes.*.retry_backoff` | Retry delay duration; default `200ms`. |
+| `routes.*.retry_codes` | Restrict retries to these HTTP status codes. Empty retries errors other than canceled contexts or unsupported parameters. |
+| `routes.*.timeout` | Per-attempt duration; omitted uses caller/provider timeout. |
+| `routes.*.shadow_provider` | Route-specific background chat mirror. |
+| `routes.*.default_params` | Request parameters supplied when the caller omits them. |
+| `routes.*.override_params` | Request parameters forced by the route. |
+| `routes.*.drop_params` | Request fields removed before upstream forwarding. |
+| `routes.*.variants` | Weighted, optionally conditional provider/model alternatives. |
+| `routes.*.variants[].name` | Optional label shown in configuration summaries; not used to choose a variant or in request-routing metadata. |
+| `routes.*.variants[].provider` | Registry provider/account for the variant. |
+| `routes.*.variants[].model` | Upstream model override. |
+| `routes.*.variants[].weight` | Positive integer selection weight. |
+| `routes.*.variants[].condition` | Optional CEL predicate for variant eligibility. |

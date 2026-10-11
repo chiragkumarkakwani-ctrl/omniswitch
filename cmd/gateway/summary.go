@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sort"
 	"strings"
 
@@ -8,7 +9,20 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
+
+func runtimeStorageSummary(ctx context.Context, st *store.Store) (map[string]any, error) {
+	status, err := st.SchemaStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"driver":             st.Driver(),
+		"schema_version":     status.Current,
+		"pending_migrations": status.Pending,
+	}, nil
+}
 
 func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry) map[string]any {
 	providerNames := []string{}
@@ -20,9 +34,12 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 	}
 	return map[string]any{
 		"config_path": settings.configPath,
+		"retention":   retentionPolicySummary(settings.retention),
 		"gateway": map[string]any{
 			"listen":                   settings.listenAddr,
+			"policy_dir":               settings.policyDir,
 			"auth_enabled":             settings.authEnabled,
+			"migrate_on_start":         settings.migrateOnStart,
 			"cache_threshold":          settings.cacheThreshold,
 			"cache_ttl":                settings.cacheTTL.String(),
 			"cache_scope":              settings.cacheScope,
@@ -73,6 +90,9 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 			"llm_judges":      guardrailLLMJudgeSummaries(settings.guardrailConfig.LLMJudges),
 			"moderation_api":  true,
 		},
+		"metrics": map[string]any{
+			"public": settings.prometheusEnabled && settings.metricsPublic,
+		},
 		"providers": map[string]any{
 			"names":       providerNames,
 			"model_count": modelCount,
@@ -86,9 +106,12 @@ func runtimeConfigSummary(settings runtimeSettings, registry *provider.Registry)
 			"enabled":            true,
 			"agent_card_path":    "/.well-known/agent-card.json",
 			"jsonrpc_path":       "/a2a",
-			"methods":            []string{"SendMessage", "GetExtendedAgentCard"},
-			"task_lifecycle":     false,
-			"streaming":          false,
+			"methods":            gateway.A2AMethods(),
+			"task_lifecycle":     true,
+			"task_store":         "in_memory",
+			"cancel":             "best_effort",
+			"streaming":          true,
+			"streaming_mode":     "sse_task_events",
 			"push_notifications": false,
 		},
 	}
@@ -178,6 +201,7 @@ func routeSummaries(routes map[string]router.Route) []map[string]any {
 		summaries = append(summaries, map[string]any{
 			"model":           name,
 			"provider":        route.Provider,
+			"strategy":        route.Strategy,
 			"fallbacks":       append([]string(nil), route.Fallbacks...),
 			"max_retries":     route.MaxRetries,
 			"retry_backoff":   route.RetryBackoff,

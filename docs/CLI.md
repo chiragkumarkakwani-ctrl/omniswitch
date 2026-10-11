@@ -10,6 +10,7 @@ Usage:
 Commands:
   serve             Start the gateway server (default when no command is given)
   validate-config   Validate a gateway config file and exit (defaults to $OMNISWITCH_CONFIG)
+  migrate           Inspect or apply schema migrations (status, up [--dry-run])
   version           Print version information
   help              Show this help text
 
@@ -18,7 +19,7 @@ Flags:
   -v, --version     Print version information
 ```
 
-None of `--help`, `--version`, or `validate-config` start the HTTP server or
+None of `--help`, `--version`, `validate-config`, or `migrate` start the HTTP server or
 bind a port, so they are safe to run in scripts, health checks, or CI even
 while a gateway instance is already listening on the configured address.
 
@@ -55,6 +56,55 @@ omniswitch validate-config ./broken.yaml
 
 If no path is given, it falls back to `OMNISWITCH_CONFIG`. If neither is set,
 it prints a usage error and exits `2`.
+
+## `omniswitch migrate status`
+
+Prints the storage driver, current schema version, latest version, and number of
+pending migrations. It never creates or alters schema tables, even when startup
+migrations are enabled. Example output:
+
+```text
+Driver: sqlite
+Current version: 0
+Latest version: 4
+Pending migrations: 4
+```
+
+## `omniswitch migrate up [--dry-run]`
+
+Applies pending migrations in order using the same transactional migrator as
+`serve`. `--dry-run` lists their version numbers and names without applying them
+or creating the migration ledger. Repeated `up` calls are idempotent. Schema
+version 4 adds retention indexes, including partial indexes for payload-bearing
+rows and independently retained log classes. Existing row data is unchanged.
+
+```bash
+omniswitch migrate status
+omniswitch migrate up --dry-run
+omniswitch migrate up
+```
+
+Both commands load `$OMNISWITCH_CONFIG` and use the same storage settings as
+`serve`: `OMNISWITCH_DATA` overrides `gateway.data_dir`, and
+`OMNISWITCH_DATABASE_URL` overrides `gateway.storage_url`. A `postgres://` or
+`postgresql://` URL selects PostgreSQL; otherwise SQLite uses `omniswitch.db`
+in the data directory. Commands do not start the gateway or bind its HTTP port.
+Opening the store can move legacy `sentinel.db` / `sentinel_cache.db` filenames
+and their WAL/SHM sidecars, even for status or dry-run; this does not change the
+schema. Existing new filenames are never overwritten.
+
+**Before upgrading, stop old gateway processes and back up the SQLite database
+and sidecars, or run `pg_dump` for PostgreSQL.** For controlled rollouts, set
+`gateway.migrate_on_start: false` (or `OMNISWITCH_MIGRATE_ON_START=false`), run
+`migrate status` / `migrate up --dry-run`, and then explicitly run `migrate up`.
+Readiness stays HTTP 503 while migrations are pending; restart afterward if the
+gateway deferred bootstrap-key initialization while the schema was pending.
+
+Retention is independent of migrations and enabled by default. The first sweep
+runs after one hour: request logs older than 30 days and logged payloads older
+than 7 days are removed unless the respective retention policies are `0`.
+See [configuration](CONFIGURATION.md#data-retention) for all five policies and
+the admin-only manual sweep endpoint.
 
 ## `omniswitch version` / `omniswitch --version` / `omniswitch -v`
 

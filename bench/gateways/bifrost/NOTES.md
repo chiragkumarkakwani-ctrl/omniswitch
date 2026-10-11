@@ -18,7 +18,7 @@
   order) are not yet represented here; add them once the schema is
   confirmed, since fallback chains are one of Bifrost's headline claims.
 - **Cache/guardrails.** Not configured in either cell pending schema
-  confirmation for Bifrost's semantic-cache and guardrail blocks (both are
+  confirmation for Bifrost's similarity-cache (mechanism not verified) and guardrail blocks (both are
   documented product features per `docs/comparison/claims.yaml`, but this
   session did not find a concrete config example for either). S6 and S8
   are `n/a` for Bifrost until that config is added and verified against a

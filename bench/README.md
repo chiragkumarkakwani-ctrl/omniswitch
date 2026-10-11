@@ -1,9 +1,7 @@
 # OmniSwitch competitive benchmark harness
 
 This directory is the reproducible harness for OmniSwitch's competitive
-gateway benchmarks (public beta plan items B1-B9; full design in
-`/code/.plans/omniswitch-competitive-benchmark-plan.md`, sections 2.3, 3,
-and 4). It measures **gateway overhead against a deterministic local mock**,
+gateway benchmarks. It measures **gateway overhead against a deterministic local mock**,
 not end-to-end model latency, and publishes raw artifacts alongside every
 number.
 
@@ -159,8 +157,8 @@ docker compose -f bench/docker-compose.yml up --build
 
 ## Methodology summary
 
-Full detail lives in `/code/.plans/omniswitch-competitive-benchmark-plan.md`
-section 3; this is the operative summary for anyone running the harness.
+This is the operative methodology for anyone running the harness. Per-gateway
+configuration and parity boundaries are recorded in `gateways/` notes.
 
 **Principles:** one host, one mock, one driver, one payload set, same
 cpuset/memory limit per gateway, same scenario definitions. Isolate gateway

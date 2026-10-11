@@ -1,0 +1,36 @@
+name: Prometheus metrics
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  promtool:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Generate a real gateway scrape
+        env:
+          OMNISWITCH_METRICS_OUTPUT: ${{ runner.temp }}/omniswitch-metrics.prom
+        run: go test -count=1 -run '^TestPrometheusScrape$' ./internal/gateway
+      - name: Check exposition with pinned promtool
+        env:
+          PROMETHEUS_VERSION: 3.5.0
+          PROMETHEUS_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' "$PROMETHEUS_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          "$RUNNER_TEMP/prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool" check metrics < "$RUNNER_TEMP/omniswitch-metrics.prom"

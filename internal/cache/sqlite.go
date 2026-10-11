@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/omniswitch-dev/omniswitch/internal/dbfile"
 	"github.com/omniswitch-dev/omniswitch/internal/provider"
 
 	_ "modernc.org/sqlite"
@@ -23,7 +24,10 @@ func NewSQLiteCache(dir string, ttl time.Duration) (*SQLiteCache, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create cache directory: %w", err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "sentinel_cache.db"))
+	if err := dbfile.MoveLegacySQLite(dir, "sentinel_cache.db", "omniswitch_cache.db"); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dir, "omniswitch_cache.db"))
 	if err != nil {
 		return nil, fmt.Errorf("open cache database: %w", err)
 	}

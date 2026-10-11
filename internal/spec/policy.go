@@ -53,6 +53,11 @@ func LoadPolicy(path string) (Policy, error) {
 		return Policy{}, fmt.Errorf("read policy spec: %w", err)
 	}
 
+	return ParsePolicy(data)
+}
+
+// ParsePolicy validates a Policy document without reading a server-side path.
+func ParsePolicy(data []byte) (Policy, error) {
 	var policy Policy
 	if err := yaml.Unmarshal(bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}), &policy); err != nil {
 		return Policy{}, fmt.Errorf("parse policy spec: %w", err)

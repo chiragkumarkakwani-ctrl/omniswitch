@@ -14,6 +14,8 @@ import (
 // exposes the configured OmniSwitch guardrails without sending customer input
 // to a third-party moderation API.
 func (h *Handler) Moderations(w http.ResponseWriter, r *http.Request) {
+	w, r, finishMetrics := h.beginRequestMetrics(w, r)
+	defer finishMetrics()
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "only POST is supported")
 		return
@@ -27,6 +29,7 @@ func (h *Handler) Moderations(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	setRequestMetricModel(r.Context(), request.Model)
 	texts, err := moderationInputTexts(request.Input)
 	if err != nil || len(texts) == 0 {
 		if err == nil {
@@ -65,6 +68,7 @@ func (h *Handler) Moderations(w http.ResponseWriter, r *http.Request) {
 	if model == "" {
 		model = "omniswitch-guardrails"
 	}
+	setRequestMetricResult(r.Context(), "omniswitch", model)
 	w.Header().Set("x-omniswitch-trace-id", traceID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":      "modr_" + requestID,

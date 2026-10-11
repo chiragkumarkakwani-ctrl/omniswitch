@@ -20,6 +20,8 @@ type AuthMiddleware struct {
 	store         *store.Store
 	enabled       bool
 	authenticator TokenAuthenticator
+	lastUsedMu    sync.Mutex
+	lastUsed      map[string]time.Time
 }
 
 // Identity is the authenticated caller attached to a request. Gateway and
@@ -86,6 +88,8 @@ func (a *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 				return
 			}
 
+			a.touchAPIKeyLastUsed(r.Context(), apiKey.ID, time.Now().UTC())
+
 			organizationID := ""
 			if apiKey.WorkspaceID != "" {
 				workspace, workspaceErr := a.store.GetWorkspaceByID(r.Context(), apiKey.WorkspaceID)
@@ -117,6 +121,25 @@ func (a *AuthMiddleware) Wrap(next http.Handler) http.Handler {
 		}
 		a.serveIdentity(w, r, next, identity)
 	})
+}
+
+// Reserve the timestamp before writing so concurrent requests for the same key
+// cannot all issue an update. A failed touch never fails authentication, and is
+// retried on the next minute rather than adding writes to every request.
+func (a *AuthMiddleware) touchAPIKeyLastUsed(ctx context.Context, id string, now time.Time) {
+	a.lastUsedMu.Lock()
+	if previous, ok := a.lastUsed[id]; ok && now.Sub(previous) < time.Minute {
+		a.lastUsedMu.Unlock()
+		return
+	}
+	if a.lastUsed == nil {
+		a.lastUsed = make(map[string]time.Time)
+	}
+	a.lastUsed[id] = now
+	a.lastUsedMu.Unlock()
+	if err := a.store.TouchAPIKeyLastUsed(ctx, id, now); err != nil {
+		log.Printf("failed to update last use of API key %q: %v", id, err)
+	}
 }
 
 func (a *AuthMiddleware) serveIdentity(w http.ResponseWriter, r *http.Request, next http.Handler, identity Identity) {
@@ -201,6 +224,11 @@ func requiredRole(method, path string) string {
 		return "viewer"
 	}
 	switch path {
+	case "/api/retention/sweep":
+		if method == http.MethodPost {
+			return "admin"
+		}
+		return "viewer"
 	case "/api/keys", "/api/virtual-keys", "/api/virtual-keys/rotate", "/api/orgs", "/api/workspaces", "/api/users", "/api/workspace-members":
 		if method != http.MethodGet {
 			return "admin"
@@ -355,6 +383,7 @@ func (backend *localRateLimitBackend) Allow(_ context.Context, key string, limit
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		r = r.WithContext(store.WithRequestEndpoint(r.Context(), r.URL.Path))
 		next.ServeHTTP(w, r)
 		log.Printf("%s %s %s %v", r.Method, r.URL.Path, r.RemoteAddr, time.Since(start))
 	})

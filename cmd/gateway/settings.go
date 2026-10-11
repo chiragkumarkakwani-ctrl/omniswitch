@@ -11,11 +11,13 @@ import (
 	"github.com/omniswitch-dev/omniswitch/internal/gatewayconfig"
 	"github.com/omniswitch-dev/omniswitch/internal/guardrail"
 	"github.com/omniswitch-dev/omniswitch/internal/router"
+	"github.com/omniswitch-dev/omniswitch/internal/store"
 )
 
 type runtimeSettings struct {
 	listenAddr             string
 	dataDir                string
+	policyDir              string
 	authEnabled            bool
 	cacheThreshold         float64
 	cacheTTL               time.Duration
@@ -39,6 +41,8 @@ type runtimeSettings struct {
 	idleTimeout            time.Duration
 	shadowProvider         string
 	storageURL             string
+	migrateOnStart         bool
+	retention              store.RetentionPolicy
 	alerts                 gateway.AlertConfig
 	mcpEnabled             bool
 	mcpPolicyPath          string
@@ -62,6 +66,7 @@ type runtimeSettings struct {
 	otelInsecure           bool
 	otelTimeout            time.Duration
 	prometheusEnabled      bool
+	metricsPublic          bool
 	vaultKey               string
 	bootstrapAPIKey        string
 	bootstrapWorkspaceID   string
@@ -74,6 +79,9 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings := runtimeSettings{
 		listenAddr:             ":8080",
 		dataDir:                ".",
+		policyDir:              "policies",
+		migrateOnStart:         true,
+		retention:              store.DefaultRetentionPolicy(),
 		cacheThreshold:         0.95,
 		cacheTTL:               24 * time.Hour,
 		cacheScope:             "api_key",
@@ -112,6 +120,8 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 
 	settings.listenAddr = env("OMNISWITCH_LISTEN", settings.listenAddr)
 	settings.dataDir = env("OMNISWITCH_DATA", settings.dataDir)
+	settings.policyDir = env("OMNISWITCH_POLICY_DIR", settings.policyDir)
+	settings.migrateOnStart = envBool("OMNISWITCH_MIGRATE_ON_START", settings.migrateOnStart)
 	settings.authEnabled = envBool("OMNISWITCH_AUTH", settings.authEnabled)
 	settings.cacheThreshold = envFloat("OMNISWITCH_CACHE_THRESHOLD", settings.cacheThreshold)
 	settings.cacheTTL = envDuration("OMNISWITCH_CACHE_TTL", settings.cacheTTL)
@@ -154,6 +164,7 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	settings.otelInsecure = envBool("OMNISWITCH_OTEL_INSECURE", settings.otelInsecure)
 	settings.otelTimeout = envDuration("OMNISWITCH_OTEL_TIMEOUT", settings.otelTimeout)
 	settings.prometheusEnabled = envBool("OMNISWITCH_PROMETHEUS_ENABLED", settings.prometheusEnabled)
+	settings.metricsPublic = envBool("OMNISWITCH_METRICS_PUBLIC", settings.metricsPublic)
 	settings.shutdownTimeout = envDuration("OMNISWITCH_SHUTDOWN_TIMEOUT", settings.shutdownTimeout)
 	settings.allowNoProviders = envBool("OMNISWITCH_ALLOW_NO_PROVIDERS", settings.allowNoProviders)
 	settings.vaultKey = env("OMNISWITCH_VAULT_KEY", settings.vaultKey)
@@ -171,15 +182,22 @@ func loadRuntimeSettings() (runtimeSettings, error) {
 	for model, route := range parseABConfig(os.Getenv("OMNISWITCH_AB_TEST")) {
 		settings.routes[model] = mergeRoute(settings.routes[model], route)
 	}
+	if err := loadRetentionEnv(&settings); err != nil {
+		return settings, err
+	}
 	return settings, nil
 }
 
 func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
+	applyRetentionConfig(settings, cfg.Retention)
 	if cfg.Gateway.Listen != "" {
 		settings.listenAddr = cfg.Gateway.Listen
 	}
 	if cfg.Gateway.DataDir != "" {
 		settings.dataDir = cfg.Gateway.DataDir
+	}
+	if cfg.Gateway.PolicyDir != "" {
+		settings.policyDir = cfg.Gateway.PolicyDir
 	}
 	if cfg.Gateway.Auth != nil {
 		settings.authEnabled = *cfg.Gateway.Auth
@@ -276,6 +294,9 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	if cfg.Gateway.ShadowProvider != "" {
 		settings.shadowProvider = cfg.Gateway.ShadowProvider
 	}
+	if cfg.Gateway.MigrateOnStart != nil {
+		settings.migrateOnStart = *cfg.Gateway.MigrateOnStart
+	}
 	if cfg.Gateway.StorageURL != "" {
 		settings.storageURL = cfg.Gateway.StorageURL
 	}
@@ -307,6 +328,9 @@ func applyGatewayConfig(settings *runtimeSettings, cfg gatewayconfig.Config) {
 	}
 	if cfg.Observability.PrometheusEnabled != nil {
 		settings.prometheusEnabled = *cfg.Observability.PrometheusEnabled
+	}
+	if cfg.Observability.Prometheus.Public != nil {
+		settings.metricsPublic = *cfg.Observability.Prometheus.Public
 	}
 	if cfg.MCP.Enabled != nil {
 		settings.mcpEnabled = *cfg.MCP.Enabled
